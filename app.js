@@ -10,9 +10,10 @@
     cta:      "今すぐチェック",
     palette:  "sunset",
     template: "ec",
-    bgm:      "upbeat",
-    enabledSizes: { "16:9": true, "1:1": true, "9:16": true },
+    bgm:      "dova21848",
+    enabledSizes: { "1:1": true, "9:16": true },
   };
+  const BGM_URL = "https://dova-s.jp/bgm/detail/21848/download";
   const state = JSON.parse(JSON.stringify(defaults));
 
   const palettes = {
@@ -24,10 +25,10 @@
   };
 
   const templates = {
-    ec:    { headline: "SUMMER SALE",      subline: "30% OFF",          cta: "今すぐチェック",   palette: "sunset", bgm: "upbeat" },
-    app:   { headline: "新感覚アプリ",     subline: "ダウンロードは無料", cta: "App Store で見る", palette: "ocean",  bgm: "upbeat" },
-    brand: { headline: "Make it Yours.",   subline: "Crafted since 2008",cta: "ブランドを知る",   palette: "mono",   bgm: "cinematic" },
-    event: { headline: "SPRING FESTIVAL",  subline: "5/10 SAT, 12:00",  cta: "参加登録する",     palette: "candy",  bgm: "calm" },
+    ec:    { headline: "SUMMER SALE",      subline: "30% OFF",          cta: "今すぐチェック",   palette: "sunset", bgm: "dova21848" },
+    app:   { headline: "新感覚アプリ",     subline: "ダウンロードは無料", cta: "App Store で見る", palette: "ocean",  bgm: "dova21848" },
+    brand: { headline: "Make it Yours.",   subline: "Crafted since 2008",cta: "ブランドを知る",   palette: "mono",   bgm: "dova21848" },
+    event: { headline: "SPRING FESTIVAL",  subline: "5/10 SAT, 12:00",  cta: "参加登録する",     palette: "candy",  bgm: "dova21848" },
   };
 
   // ---------- Render ----------
@@ -234,13 +235,12 @@
   });
 
   $("#duplicateBtn").addEventListener("click", () => {
-    state.enabledSizes["16:9"] = true;
     state.enabledSizes["1:1"]  = true;
     state.enabledSizes["9:16"] = true;
     $$('.chk input[type="checkbox"]').forEach((cb) => (cb.checked = true));
     render();
     flashAll();
-    toast("16:9 / 1:1 / 9:16 に自動複製しました");
+    toast("1080×1080 / 1080×1920 に自動複製しました");
   });
 
   $("#exportPpro").addEventListener("click", () => {
@@ -287,9 +287,48 @@
     toast("初期状態にリセットしました");
   });
 
+  // ---------- BGM (DOVA-SYNDROME) ----------
+  const bgmAudio  = $("#bgmAudio");
+  const bgmToggle = $("#bgmToggle");
+  const bgmStatus = $("#bgmStatus");
+
+  function setBgmLabel(playing) {
+    if (!bgmToggle) return;
+    bgmToggle.textContent = playing ? "■ 停止" : "▶ BGM を試聴";
+  }
+  function setBgmStatus(msg) { if (bgmStatus) bgmStatus.textContent = msg; }
+
+  function playBgm() {
+    if (!bgmAudio) return;
+    if (bgmAudio.src !== BGM_URL) bgmAudio.src = BGM_URL;
+    const p = bgmAudio.play();
+    if (p && p.catch) {
+      p.catch(() => {
+        setBgmLabel(false);
+        setBgmStatus("ブラウザ側の制限で直接再生できませんでした。リンクから DL してください。");
+        toast("BGM を直接再生できませんでした。リンクからダウンロードしてください。");
+      });
+    }
+  }
+  function stopBgm() { if (bgmAudio) bgmAudio.pause(); }
+
+  if (bgmAudio && bgmToggle) {
+    bgmToggle.addEventListener("click", () => {
+      if (bgmAudio.paused) playBgm(); else stopBgm();
+    });
+    bgmAudio.addEventListener("play",  () => { setBgmLabel(true);  setBgmStatus("再生中: DOVA-SYNDROME #21848"); });
+    bgmAudio.addEventListener("pause", () => setBgmLabel(false));
+    bgmAudio.addEventListener("ended", () => setBgmLabel(false));
+    bgmAudio.addEventListener("error", () => {
+      setBgmLabel(false);
+      setBgmStatus("読み込みに失敗しました。リンクから DL してください。");
+    });
+  }
+
   // ---------- Play all (preview animation) ----------
   $("#playAll").addEventListener("click", () => {
     flashAll();
+    playBgm();
     toast("全サイズを同時再生中…");
   });
 
