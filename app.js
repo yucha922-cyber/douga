@@ -522,12 +522,342 @@
     playBgm && playBgm();
   }
 
-  // ---------- Export actions ----------
-  $("#exportAll").addEventListener("click", () => {
+  // ---------- Export (Canvas + MediaRecorder + Web Audio) ----------
+  let customBgmBuffer = null;     // AudioBuffer (decoded)
+  let customBgmName   = null;
+  let exporting       = false;
+  const epEl    = $("#exportProgress");
+  const epLabel = $("#epLabel");
+  const epFill  = $("#epFill");
+
+  function showExportProgress(ratio, label) {
+    if (!epEl) return;
+    epEl.hidden = false;
+    if (label && epLabel) epLabel.textContent = label;
+    if (epFill) epFill.style.width = (Math.max(0, Math.min(1, ratio)) * 100).toFixed(1) + "%";
+  }
+  function hideExportProgress() {
+    if (!epEl) return;
+    epEl.hidden = true;
+    if (epFill) epFill.style.width = "0%";
+  }
+
+  // Custom BGM upload (used because dova-s.jp doesn't expose CORS for fetch)
+  const bgmFileInput = $("#bgmFile");
+  if (bgmFileInput) {
+    bgmFileInput.addEventListener("change", async () => {
+      const f = bgmFileInput.files && bgmFileInput.files[0];
+      if (!f) return;
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const arr = await f.arrayBuffer();
+        customBgmBuffer = await ctx.decodeAudioData(arr);
+        customBgmName   = f.name;
+        try { await ctx.close(); } catch {}
+        if (bgmStatus) bgmStatus.textContent = `ローカル BGM: ${f.name}`;
+        // Also use it for in-page preview
+        if (bgmAudio) bgmAudio.src = URL.createObjectURL(f);
+        toast(`BGM「${f.name}」を読み込みました（書き出しに焼き込みます）`);
+      } catch (e) {
+        toast("BGM の読み込みに失敗しました");
+      }
+    });
+  }
+
+  async function loadBgmBufferForExport(audioCtx) {
+    if (customBgmBuffer) {
+      // Re-decode against the export's audioCtx (AudioBuffer is bound to a context's sample rate);
+      // safer to re-decode from the file each time. We cached the decoded buffer; clone via channel data.
+      const src = customBgmBuffer;
+      const buf = audioCtx.createBuffer(src.numberOfChannels, src.length, src.sampleRate);
+      for (let ch = 0; ch < src.numberOfChannels; ch++) {
+        buf.copyToChannel(src.getChannelData(ch), ch);
+      }
+      return buf;
+    }
+    // Best-effort fetch from dova (will likely fail by CORS)
+    try {
+      const res = await fetch(BGM_URL, { mode: "cors" });
+      if (!res.ok) throw new Error("fetch failed");
+      const arr = await res.arrayBuffer();
+      return await audioCtx.decodeAudioData(arr);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function pickRecorderMime() {
+    if (typeof MediaRecorder === "undefined") return null;
+    const candidates = [
+      "video/mp4;codecs=h264,aac",
+      "video/mp4;codecs=avc1,mp4a",
+      "video/mp4",
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+    ];
+    for (const m of candidates) {
+      try { if (MediaRecorder.isTypeSupported(m)) return m; } catch {}
+    }
+    return "";
+  }
+
+  function downloadBlob(blob, name) {
+    const a = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    a.href = url; a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  function paletteBaseColors(name) {
+    // approximation of the CSS palette used for fallback bg
+    const map = {
+      sunset: ["#1a2440", "#341a4a", "#4a1a3a"],
+      ocean:  ["#003049", "#0077b6", "#00c8ff"],
+      forest: ["#1a3a2f", "#2bb673", "#0a3a2a"],
+      mono:   ["#0a0a0a", "#2a2a2a", "#0a0a0a"],
+      candy:  ["#ff3a8c", "#ffd166", "#6f5cff"],
+    };
+    return map[name] || map.sunset;
+  }
+
+  function drawExportFrame(ctx, video, W, H, progress) {
+    // 1) Background (gradient fallback when video frame not ready)
+    const cols = paletteBaseColors(state.palette);
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0,  cols[0]);
+    bg.addColorStop(0.6, cols[1]);
+    bg.addColorStop(1,  cols[2]);
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // 2) Video cover-fit
+    if (video && video.readyState >= 2 && video.videoWidth && video.videoHeight) {
+      const vw = video.videoWidth, vh = video.videoHeight;
+      const sr = vw / vh, dr = W / H;
+      let sx, sy, sw, sh;
+      if (sr > dr) { sh = vh; sw = vh * dr; sx = (vw - sw) / 2; sy = 0; }
+      else         { sw = vw; sh = vw / dr; sx = 0; sy = (vh - sh) / 2; }
+      try { ctx.drawImage(video, sx, sy, sw, sh, 0, 0, W, H); } catch {}
+    }
+
+    // 3) Bottom dim gradient for legibility
+    const og = ctx.createLinearGradient(0, H * 0.35, 0, H);
+    og.addColorStop(0, "rgba(0,0,0,0)");
+    og.addColorStop(1, "rgba(0,0,0,0.6)");
+    ctx.fillStyle = og;
+    ctx.fillRect(0, 0, W, H);
+
+    // 4) Text stack (offer / deadline / CTA pill)
+    const cx = W / 2;
+    const cy = H / 2;
+    const base = Math.min(W, H);
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#fff";
+    ctx.shadowColor   = "rgba(0,0,0,0.55)";
+    ctx.shadowBlur    = base * 0.025;
+    ctx.shadowOffsetY = base * 0.006;
+
+    // Headline (offer)
+    const hSize = Math.round(base * 0.105);
+    ctx.font = `900 ${hSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
+    ctx.fillText(state.headline || "", cx, cy - hSize * 0.45);
+
+    // Subline (deadline)
+    const sSize = Math.round(base * 0.045);
+    ctx.font = `600 ${sSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
+    ctx.fillText(state.subline || "", cx, cy + hSize * 0.35);
+
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+
+    // CTA pill
+    const cSize  = Math.round(base * 0.038);
+    ctx.font = `800 ${cSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
+    const cText  = state.cta || "";
+    const tw     = ctx.measureText(cText).width;
+    const padX   = cSize * 1.4;
+    const padY   = cSize * 0.7;
+    const pillW  = tw + padX * 2;
+    const pillH  = cSize + padY * 2;
+    const pillX  = cx - pillW / 2;
+    const pillY  = cy + hSize * 0.95;
+    const r      = pillH / 2;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.moveTo(pillX + r, pillY);
+    ctx.arcTo(pillX + pillW, pillY, pillX + pillW, pillY + r, r);
+    ctx.arcTo(pillX + pillW, pillY + pillH, pillX + pillW - r, pillY + pillH, r);
+    ctx.arcTo(pillX, pillY + pillH, pillX, pillY + pillH - r, r);
+    ctx.arcTo(pillX, pillY, pillX + r, pillY, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#0e1218";
+    ctx.fillText(cText, cx, pillY + pillH / 2 + cSize * 0.05);
+
+    // 5) Progress bar at bottom
+    const barH = Math.max(3, Math.round(H * 0.005));
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.fillRect(0, H - barH, W, barH);
+    const pg = ctx.createLinearGradient(0, 0, W, 0);
+    pg.addColorStop(0, "#00c8ff");
+    pg.addColorStop(1, "#6f5cff");
+    ctx.fillStyle = pg;
+    ctx.fillRect(0, H - barH, W * Math.max(0, Math.min(1, progress)), barH);
+  }
+
+  async function encodeOne(W, H, label, onProgress) {
+    const mime = pickRecorderMime();
+    if (mime === null) throw new Error("このブラウザは MediaRecorder に対応していません");
+
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    drawExportFrame(ctx, null, W, H, 0); // prime first frame
+
+    const srcVideo = document.createElement("video");
+    srcVideo.muted = true;
+    srcVideo.playsInline = true;
+    srcVideo.preload = "auto";
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") { try { await audioCtx.resume(); } catch {} }
+    const audioDest = audioCtx.createMediaStreamDestination();
+    const bgmBuf = await loadBgmBufferForExport(audioCtx);
+    let bgmNode = null;
+    if (bgmBuf) {
+      bgmNode = audioCtx.createBufferSource();
+      bgmNode.buffer = bgmBuf;
+      bgmNode.loop   = true;
+      const g = audioCtx.createGain();
+      g.gain.value = 0.85;
+      bgmNode.connect(g).connect(audioDest);
+    } else {
+      // silent track to keep the recorder happy
+      const osc  = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0.0001;
+      osc.connect(gain).connect(audioDest);
+      osc.start();
+    }
+
+    const stream = new MediaStream();
+    canvas.captureStream(30).getVideoTracks().forEach((t) => stream.addTrack(t));
+    audioDest.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
+
+    const recorder = mime
+      ? new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000 })
+      : new MediaRecorder(stream, { videoBitsPerSecond: 6_000_000 });
+    const chunks = [];
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+
+    const totalSec = totalLength();
+    let elapsed = 0;
+    let i = 0;
+    let raf = 0;
+
+    return new Promise((resolve, reject) => {
+      recorder.onerror = (e) => reject(e.error || new Error("recorder error"));
+      recorder.onstop = () => {
+        cancelAnimationFrame(raf);
+        try { audioCtx.close(); } catch {}
+        const outMime = recorder.mimeType || mime || "video/webm";
+        resolve(new Blob(chunks, { type: outMime }));
+      };
+
+      const drawLoop = () => {
+        const c = clips[i] || clips[clips.length - 1];
+        const local = c ? Math.max(0, srcVideo.currentTime - c.in) : 0;
+        const used  = c ? Math.min(local, c.out - c.in) : 0;
+        const ratio = totalSec ? (elapsed + used) / totalSec : 0;
+        drawExportFrame(ctx, srcVideo, W, H, ratio);
+        raf = requestAnimationFrame(drawLoop);
+      };
+
+      const finish = () => {
+        try { srcVideo.pause(); } catch {}
+        try { bgmNode && bgmNode.stop(); } catch {}
+        try { recorder.state !== "inactive" && recorder.stop(); } catch {}
+      };
+
+      const playClip = () => {
+        const c = clips[i];
+        if (!c) { finish(); return; }
+        srcVideo.src = c.url;
+        const onMeta = () => {
+          try { srcVideo.currentTime = c.in; } catch {}
+          srcVideo.play().catch(() => {});
+        };
+        srcVideo.addEventListener("loadedmetadata", onMeta, { once: true });
+        const onTime = () => {
+          if (srcVideo.currentTime >= c.out - 0.04) {
+            srcVideo.removeEventListener("timeupdate", onTime);
+            elapsed += (c.out - c.in);
+            onProgress(Math.min(1, elapsed / totalSec), label);
+            i++;
+            if (i >= clips.length) finish();
+            else playClip();
+          }
+        };
+        srcVideo.addEventListener("timeupdate", onTime);
+      };
+
+      try {
+        recorder.start(250);
+        if (bgmNode) bgmNode.start();
+        drawLoop();
+        playClip();
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  async function exportAll() {
+    if (exporting) { toast("書き出し中です。完了までお待ちください"); return; }
+    if (typeof MediaRecorder === "undefined") {
+      toast("このブラウザは動画書き出しに対応していません（Chrome / Edge / Safari 推奨）");
+      return;
+    }
+    if (!clips.length) { toast("先にクリップを取り込んでください"); return; }
     const sizes = Object.keys(state.enabledSizes).filter((k) => state.enabledSizes[k]);
     if (!sizes.length) { toast("書き出すサイズが選択されていません"); return; }
-    runExport(sizes, "MP4");
-  });
+
+    exporting = true;
+    stopStitched();
+    showExportProgress(0, "準備中…");
+    try {
+      for (let s = 0; s < sizes.length; s++) {
+        const size  = sizes[s];
+        const W     = 1080;
+        const H     = size === "9:16" ? 1920 : 1080;
+        const label = `${W}×${H} を書き出し中…`;
+        showExportProgress(0, label);
+        const blob = await encodeOne(W, H, label, (r, lbl) => {
+          // weight progress across sizes
+          const overall = (s + r) / sizes.length;
+          showExportProgress(overall, lbl);
+        });
+        const ext = (blob.type || "").includes("mp4") ? "mp4" : "webm";
+        downloadBlob(blob, `adcut_${W}x${H}.${ext}`);
+      }
+      showExportProgress(1, "完了");
+      toast(`書き出し完了: ${sizes.length} サイズをダウンロードしました`);
+    } catch (err) {
+      console.error(err);
+      toast("書き出しに失敗しました: " + (err && err.message ? err.message : "不明なエラー"));
+    } finally {
+      exporting = false;
+      setTimeout(hideExportProgress, 800);
+    }
+  }
+
+  $("#exportAll").addEventListener("click", () => { exportAll(); });
 
   $("#duplicateBtn").addEventListener("click", () => {
     state.enabledSizes["1:1"]  = true;
@@ -538,22 +868,15 @@
     toast("1080×1080 / 1080×1920 に自動複製しました");
   });
 
+  // Premiere Pro / After Effects buttons remain demo (project-file export needs server-side templating)
   $("#exportPpro").addEventListener("click", () => {
-    const sizes = Object.keys(state.enabledSizes).filter((k) => state.enabledSizes[k]);
-    runExport(sizes, "Premiere Pro (.prproj)");
+    toast("Premiere Pro (.prproj) の書き出しはデモです。MP4 書き出しをご利用ください");
+    flashAll();
   });
   $("#exportAe").addEventListener("click", () => {
-    const sizes = Object.keys(state.enabledSizes).filter((k) => state.enabledSizes[k]);
-    runExport(sizes, "After Effects (.aep)");
-  });
-
-  function runExport(sizes, kind) {
-    toast(`${kind} を ${sizes.length} サイズで書き出し中…`);
+    toast("After Effects (.aep) の書き出しはデモです。MP4 書き出しをご利用ください");
     flashAll();
-    setTimeout(() => {
-      toast(`書き出し完了: ${sizes.join(" / ")} を ${kind} で生成しました`);
-    }, 1400);
-  }
+  });
 
   function flashAll() {
     $$(".ad-progress-fill").forEach((bar) => {
