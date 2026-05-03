@@ -349,7 +349,51 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
   background: #fff; color: #0e1218; font-weight: 800; font-size: 10px;
   text-shadow: none;
 }
-.tpl-tile-name { font-size: 12px; color: #c2c8d6; font-weight: 600; padding: 0 2px; }
+.tpl-tile-name {
+  font-size: 12px; color: #c2c8d6; font-weight: 600; padding: 0 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* User-uploaded template tiles */
+.lib-tile-tpl { position: relative; }
+.lib-tile-tpl-user .tpl-prev {
+  background-size: cover; background-position: center;
+}
+.tpl-prev-dim {
+  position: absolute; inset: 0;
+  background: linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,0) 60%);
+  z-index: 0;
+}
+.lib-tile-tpl-user .tpl-prev-h,
+.lib-tile-tpl-user .tpl-prev-s,
+.lib-tile-tpl-user .tpl-prev-c { position: relative; z-index: 1; }
+.tpl-del {
+  position: absolute; top: 6px; right: 6px;
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 0; background: rgba(0,0,0,.65); color: #fff;
+  cursor: pointer; font-size: 13px; line-height: 1; padding: 0;
+  opacity: 0; transition: opacity .15s, background .15s; z-index: 5;
+}
+.lib-tile-tpl-user:hover .tpl-del,
+.lib-tile-tpl-user.selected .tpl-del { opacity: 1; }
+.tpl-del:hover { background: #ff3a8c; }
+
+/* "+ Add" template tile */
+.lib-tile-add {
+  padding: 0; background: transparent; border: 0; cursor: pointer; text-align: center;
+}
+.tpl-add-prev {
+  aspect-ratio: 1/1; border: 1.5px dashed #2a3144; border-radius: 10px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; color: #8b92a3; padding: 8px;
+  transition: border-color .15s, color .15s, background .15s, transform .1s;
+}
+.lib-tile-add:hover .tpl-add-prev {
+  border-color: #00c8ff; color: #e6e9f0; background: #0d1422; transform: translateY(-1px);
+}
+.tpl-add-icon { font-size: 32px; line-height: 1; font-weight: 300; }
+.tpl-add-text { font-size: 12.5px; font-weight: 700; }
+.tpl-add-sub  { font-size: 10.5px; }
 
 /* Videos folder: stack of clip rows */
 .lib-grid-vid {
@@ -524,9 +568,14 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
     radial-gradient(60% 50% at 75% 80%, var(--c2, rgba(255,58,140,.45)), transparent 65%);
   animation: drift 9s ease-in-out infinite alternate;
 }
+.ad-bg-image {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; z-index: 0; display: none;
+  pointer-events: none;
+}
 .ad-video {
   position: absolute; inset: 0; width: 100%; height: 100%;
-  object-fit: cover; z-index: 1; background: #000;
+  object-fit: cover; z-index: 1; background: transparent;
   display: block;
 }
 .ad-video:not([src]) { display: none; }

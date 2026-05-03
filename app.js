@@ -11,6 +11,7 @@
     palette:  "sunset",
     template: "ec",
     bgm:      "dova21848",
+    bgImage:  null,
     enabledSizes: { "1:1": true, "9:16": true },
   };
   const BGM_URL = "https://dova-s.jp/bgm/detail/21848/download";
@@ -38,6 +39,13 @@
     realestate:{label: "不動産",       headline: "賃料 1ヶ月無料",subline: "5/31 まで成約で", cta: "内見を予約",       palette: "ocean",  bgm: "dova21848" },
   };
 
+  // ---------- User-uploaded template images ----------
+  /** @type {{id:string,label:string,url:string}[]} */
+  const userTemplates = [];
+  let tplIdSeq = 0;
+  /** @type {HTMLImageElement|null} preloaded for canvas export */
+  let bgImageEl = null;
+
   // ---------- Render ----------
   function render() {
     $$(".size-card").forEach((card) => {
@@ -53,6 +61,17 @@
       frame.style.background = p.base;
       frame.style.setProperty("--c1", p.c1);
       frame.style.setProperty("--c2", p.c2);
+
+      const img = card.querySelector(".ad-bg-image");
+      if (img) {
+        if (state.bgImage) {
+          if (img.getAttribute("src") !== state.bgImage.url) img.src = state.bgImage.url;
+          img.style.display = "";
+        } else {
+          img.removeAttribute("src");
+          img.style.display = "none";
+        }
+      }
     });
   }
 
@@ -81,21 +100,8 @@
 
   $$(".tpl-chip[data-tpl]").forEach((b) => {
     b.addEventListener("click", () => {
-      $$(".tpl-chip[data-tpl]").forEach((x) => x.classList.remove("active"));
-      b.classList.add("active");
-      const t = templates[b.dataset.tpl];
-      state.template = b.dataset.tpl;
-      Object.assign(state, t);
-      // sync inputs
-      fieldMap.headline.value = state.headline;
-      fieldMap.subline.value  = state.subline;
-      fieldMap.cta.value      = state.cta;
-      // sync palette pill
-      $$(".pal").forEach((x) => x.classList.toggle("active", x.dataset.palette === state.palette));
-      // sync bgm pill
-      $$(".tpl-chip[data-bgm]").forEach((x) => x.classList.toggle("active", x.dataset.bgm === state.bgm));
-      render();
-      toast(`テンプレ「${b.textContent.trim()}」を適用しました`);
+      // applyTemplate() handles state, bgImage clearing, gallery + render sync
+      applyTemplate(b.dataset.tpl);
     });
   });
 
@@ -621,10 +627,13 @@
     const grid = $("#libGridTpl");
     if (!grid) return;
     grid.innerHTML = "";
+
+    // 1) Built-in templates (palette-based)
     Object.entries(templates).forEach(([key, t]) => {
       const tile = document.createElement("button");
       tile.type = "button";
-      tile.className = "lib-tile lib-tile-tpl" + (state.template === key ? " selected" : "");
+      const isActive = state.template === key && !state.bgImage;
+      tile.className = "lib-tile lib-tile-tpl" + (isActive ? " selected" : "");
       tile.dataset.tpl = key;
       tile.innerHTML = `
         <div class="tpl-prev" style="background:${templatePreviewCSS(t.palette)}">
@@ -637,14 +646,55 @@
       tile.addEventListener("click", () => applyTemplate(key));
       grid.appendChild(tile);
     });
+
+    // 2) User-uploaded templates
+    userTemplates.forEach((u) => {
+      const tile = document.createElement("button");
+      tile.type = "button";
+      const isActive = state.bgImage && state.bgImage.id === u.id;
+      tile.className = "lib-tile lib-tile-tpl lib-tile-tpl-user" + (isActive ? " selected" : "");
+      tile.dataset.userTpl = u.id;
+      tile.innerHTML = `
+        <div class="tpl-prev" style="background-image:url('${u.url}')">
+          <div class="tpl-prev-dim"></div>
+          <div class="tpl-prev-h">${state.headline || ""}</div>
+          <div class="tpl-prev-s">${state.subline || ""}</div>
+          <div class="tpl-prev-c">${state.cta || ""}</div>
+        </div>
+        <div class="tpl-tile-name" title="${u.label}">${u.label}</div>
+        <button class="tpl-del" data-tpl-del="${u.id}" type="button" title="削除">×</button>
+      `;
+      tile.addEventListener("click", (e) => {
+        if (e.target.closest("[data-tpl-del]")) return;
+        applyUserTemplate(u.id);
+      });
+      grid.appendChild(tile);
+    });
+
+    // 3) "+ Add" tile
+    const addTile = document.createElement("button");
+    addTile.type = "button";
+    addTile.className = "lib-tile lib-tile-add";
+    addTile.innerHTML = `
+      <div class="tpl-add-prev">
+        <div class="tpl-add-icon">＋</div>
+        <div class="tpl-add-text">画像を追加</div>
+        <div class="tpl-add-sub">JPG / PNG / WebP</div>
+      </div>
+    `;
+    addTile.addEventListener("click", () => tplFileInput.click());
+    grid.appendChild(addTile);
+
     const cnt = $("#libCntTpl");
-    if (cnt) cnt.textContent = `${Object.keys(templates).length} 種類`;
+    if (cnt) cnt.textContent = `${Object.keys(templates).length + userTemplates.length} 種類`;
   }
 
   function applyTemplate(key) {
     const t = templates[key];
     if (!t) return;
     state.template = key;
+    state.bgImage  = null;
+    bgImageEl      = null;
     state.headline = t.headline;
     state.subline  = t.subline;
     state.cta      = t.cta;
@@ -658,6 +708,66 @@
     render();
     toast(`テンプレ「${t.label || key}」を適用しました`);
   }
+
+  function applyUserTemplate(id) {
+    const u = userTemplates.find((x) => x.id === id);
+    if (!u) return;
+    state.bgImage = { id: u.id, url: u.url, name: u.label };
+    state.template = `user-${id}`;
+    // Preload for canvas export
+    bgImageEl = new Image();
+    bgImageEl.crossOrigin = "anonymous";
+    bgImageEl.src = u.url;
+    bgImageEl.onload = () => render();
+    $$(".tpl-chip[data-tpl]").forEach((x) => x.classList.remove("active"));
+    renderTemplateGallery();
+    render();
+    toast(`画像テンプレ「${u.label}」を適用しました`);
+  }
+
+  // Hidden file input for template image upload (created once, multi-select)
+  const tplFileInput = document.createElement("input");
+  tplFileInput.type = "file";
+  tplFileInput.accept = "image/*";
+  tplFileInput.multiple = true;
+  tplFileInput.style.display = "none";
+  document.body.appendChild(tplFileInput);
+  tplFileInput.addEventListener("change", () => {
+    const files = Array.from(tplFileInput.files || []).filter((f) => f.type.startsWith("image/"));
+    if (!files.length) return;
+    let lastId = null;
+    files.forEach((f) => {
+      const id    = `usr-${++tplIdSeq}`;
+      const url   = URL.createObjectURL(f);
+      const label = f.name.replace(/\.[^.]+$/, "");
+      userTemplates.push({ id, label, url });
+      lastId = id;
+    });
+    renderTemplateGallery();
+    if (lastId) applyUserTemplate(lastId);
+    tplFileInput.value = "";
+    toast(`${files.length} 枚をテンプレ画像フォルダに追加しました`);
+  });
+
+  // Delete user-uploaded template
+  document.addEventListener("click", (e) => {
+    const del = e.target.closest("[data-tpl-del]");
+    if (!del) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = del.dataset.tplDel;
+    const i  = userTemplates.findIndex((x) => x.id === id);
+    if (i < 0) return;
+    try { URL.revokeObjectURL(userTemplates[i].url); } catch {}
+    userTemplates.splice(i, 1);
+    if (state.bgImage && state.bgImage.id === id) {
+      state.bgImage = null;
+      bgImageEl     = null;
+    }
+    renderTemplateGallery();
+    render();
+    toast("テンプレ画像を削除しました");
+  });
 
   // ---------- Export (Canvas + MediaRecorder + Web Audio) ----------
   let exporting = false;
@@ -766,14 +876,24 @@
   }
 
   function drawExportFrame(ctx, video, W, H, progress) {
-    // 1) Background (gradient fallback when video frame not ready)
-    const cols = paletteBaseColors(state.palette);
-    const bg = ctx.createLinearGradient(0, 0, W, H);
-    bg.addColorStop(0,  cols[0]);
-    bg.addColorStop(0.6, cols[1]);
-    bg.addColorStop(1,  cols[2]);
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, H);
+    // 1) Background — user template image if available, else palette gradient
+    if (bgImageEl && bgImageEl.complete && bgImageEl.naturalWidth) {
+      const iw = bgImageEl.naturalWidth, ih = bgImageEl.naturalHeight;
+      const sr = iw / ih, dr = W / H;
+      let sx, sy, sw, sh;
+      if (sr > dr) { sh = ih; sw = ih * dr; sx = (iw - sw) / 2; sy = 0; }
+      else         { sw = iw; sh = iw / dr; sx = 0; sy = (ih - sh) / 2; }
+      try { ctx.drawImage(bgImageEl, sx, sy, sw, sh, 0, 0, W, H); }
+      catch { ctx.fillStyle = "#0a0e15"; ctx.fillRect(0, 0, W, H); }
+    } else {
+      const cols = paletteBaseColors(state.palette);
+      const bg = ctx.createLinearGradient(0, 0, W, H);
+      bg.addColorStop(0,   cols[0]);
+      bg.addColorStop(0.6, cols[1]);
+      bg.addColorStop(1,   cols[2]);
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+    }
 
     // 2) Video cover-fit
     if (video && video.readyState >= 2 && video.videoWidth && video.videoHeight) {
@@ -1032,6 +1152,7 @@
   // ---------- Reset to defaults ----------
   $("#resetBtn").addEventListener("click", () => {
     Object.assign(state, JSON.parse(JSON.stringify(defaults)));
+    bgImageEl = null;
     fieldMap.headline.value = state.headline;
     fieldMap.subline.value  = state.subline;
     fieldMap.cta.value      = state.cta;
@@ -1042,6 +1163,7 @@
     $$('.chk input[type="checkbox"]').forEach((cb) => {
       cb.checked = state.enabledSizes[cb.dataset.size];
     });
+    renderTemplateGallery();
     render();
     toast("初期状態にリセットしました");
   });
