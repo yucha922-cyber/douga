@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AdCut Studio — 広告動画編集 × Adobe 連携デモ</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container nav">
+    <a href="#" class="logo">
+      <span class="logo-mark"></span>
+      <span class="logo-text">AdCut <em>Studio</em></span>
+    </a>
+    <nav class="nav-links">
+      <a href="#features">機能</a>
+      <a href="#editor">デモエディタ</a>
+      <a href="#adobe">Adobe 連携</a>
+      <a href="#templates">テンプレート</a>
+      <a href="#pricing">料金</a>
+    </nav>
+    <a href="#editor" class="btn btn-primary">無料でデモを試す</a>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="container hero-grid">
+    <div class="hero-copy">
+      <span class="eyebrow">For Marketing & Creative Teams</span>
+      <h1>広告動画を、<br /><span class="grad">ブラウザで完成。</span><br />仕上げは Adobe で。</h1>
+      <p class="lead">
+        AdCut Studio は、SNS・YouTube・ディスプレイ広告のための動画編集プラットフォームです。
+        ブラウザ上で素早くカット・字幕・テンプレ展開を行い、ワンクリックで
+        Premiere Pro / After Effects のプロジェクトとして書き出して仕上げに繋げます。
+      </p>
+      <div class="hero-cta">
+        <a href="#editor" class="btn btn-primary btn-lg">デモを起動する</a>
+        <a href="#adobe" class="btn btn-ghost btn-lg">Adobe 連携を見る ›</a>
+      </div>
+      <ul class="hero-stats">
+        <li><strong>3.2x</strong><span>制作スピード</span></li>
+        <li><strong>120+</strong><span>広告テンプレ</span></li>
+        <li><strong>1clk</strong><span>Adobe 書き出し</span></li>
+      </ul>
+    </div>
+    <div class="hero-visual">
+      <div class="mock-window">
+        <div class="mock-bar">
+          <span></span><span></span><span></span>
+          <p>AdCut Studio — Preview</p>
+        </div>
+        <div class="mock-screen">
+          <div class="mock-preview">
+            <div class="mock-play">▶</div>
+            <div class="mock-caption">SUMMER SALE — 30% OFF</div>
+          </div>
+          <div class="mock-timeline">
+            <div class="track track-v"><span style="left:5%;width:18%"></span><span style="left:25%;width:30%"></span><span style="left:58%;width:22%"></span></div>
+            <div class="track track-a"><span style="left:0%;width:80%"></span></div>
+            <div class="track track-t"><span style="left:10%;width:25%"></span><span style="left:50%;width:20%"></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="badge badge-adobe">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M3 3h7l4 8 4-8h3v18h-4V11l-4 8h-1l-4-8v10H3z"/></svg>
+        Adobe Connected
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features" class="section">
+  <div class="container">
+    <h2 class="section-title">広告制作チームのための機能</h2>
+    <p class="section-sub">テンプレ展開・字幕・素材管理・Adobe 連携までを 1 つのワークスペースに。</p>
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-icon i-cut"></div>
+        <h3>マルチサイズ自動書き出し</h3>
+        <p>1:1 / 9:16 / 16:9 を 1 つの編集から同時生成。Meta・TikTok・YouTube に最適化。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon i-text"></div>
+        <h3>AI 字幕 & ローカライズ</h3>
+        <p>音声から字幕を自動生成し、日英中韓へ翻訳。字幕スタイルは BGM に合わせて自動調整。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon i-brand"></div>
+        <h3>ブランドキット</h3>
+        <p>ロゴ・カラー・フォント・定型コピーを一元管理。テンプレ全体に即時反映。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon i-team"></div>
+        <h3>レビュー & 承認フロー</h3>
+        <p>タイムコード付きコメント、版管理、クライアント共有リンクで承認まで短縮。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon i-data"></div>
+        <h3>広告 KPI 連携</h3>
+        <p>Meta/Google Ads と連携し、CTR・VTR の高い素材バリアントを自動レコメンド。</p>
+      </div>
+      <div class="card card-accent">
+        <div class="card-icon i-adobe"></div>
+        <h3>Adobe ワークフロー</h3>
+        <p>Premiere Pro / After Effects / Photoshop に往復編集。仕上げはプロの手で。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="editor" class="section section-dark">
+  <div class="container">
+    <h2 class="section-title light">デモエディタ</h2>
+    <p class="section-sub light">タイムラインのクリップをドラッグ、再生してみてください。実際の操作感を体験できます。</p>
+
+    <div class="editor">
+      <aside class="editor-side">
+        <div class="side-tabs">
+          <button class="tab active" data-tab="media">素材</button>
+          <button class="tab" data-tab="text">テキスト</button>
+          <button class="tab" data-tab="tpl">テンプレ</button>
+        </div>
+        <div class="side-panel" data-panel="media">
+          <div class="asset" draggable="true" data-label="Hero Shot">🎬 hero_shot.mp4</div>
+          <div class="asset" draggable="true" data-label="Product">📦 product_pack.mp4</div>
+          <div class="asset" draggable="true" data-label="CTA Logo">🏷️ logo_cta.png</div>
+          <div class="asset" draggable="true" data-label="BGM">🎵 upbeat_bgm.mp3</div>
+        </div>
+        <div class="side-panel hidden" data-panel="text">
+          <div class="asset" draggable="true" data-label="SUMMER SALE">T  SUMMER SALE</div>
+          <div class="asset" draggable="true" data-label="30% OFF">T  30% OFF</div>
+          <div class="asset" draggable="true" data-label="今すぐチェック">T  今すぐチェック</div>
+        </div>
+        <div class="side-panel hidden" data-panel="tpl">
+          <div class="asset" draggable="true" data-label="EC Sale 15s">▦ EC Sale 15s</div>
+          <div class="asset" draggable="true" data-label="App Promo 6s">▦ App Promo 6s</div>
+          <div class="asset" draggable="true" data-label="Brand Story 30s">▦ Brand Story 30s</div>
+        </div>
+      </aside>
+
+      <main class="editor-main">
+        <div class="preview" id="preview">
+          <div class="preview-stage">
+            <div class="preview-frame" id="previewFrame">
+              <div class="frame-bg"></div>
+              <div class="frame-text" id="frameText">SUMMER SALE</div>
+              <div class="frame-sub" id="frameSub">— 30% OFF —</div>
+            </div>
+          </div>
+          <div class="player">
+            <button id="playBtn" class="play">▶</button>
+            <div class="time"><span id="curTime">00:00</span> / <span id="totalTime">00:15</span></div>
+            <div class="seek"><div class="seek-fill" id="seekFill"></div></div>
+            <div class="ratio">
+              <button class="r active" data-ratio="16:9">16:9</button>
+              <button class="r" data-ratio="1:1">1:1</button>
+              <button class="r" data-ratio="9:16">9:16</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline" id="timeline">
+          <div class="ruler"><span>0s</span><span>3s</span><span>6s</span><span>9s</span><span>12s</span><span>15s</span></div>
+          <div class="lane lane-v" data-lane="v">
+            <div class="clip clip-v" style="left:0%;width:30%">Hero Shot</div>
+            <div class="clip clip-v" style="left:32%;width:35%">Product</div>
+            <div class="clip clip-v" style="left:69%;width:28%">CTA Logo</div>
+          </div>
+          <div class="lane lane-t" data-lane="t">
+            <div class="clip clip-t" style="left:5%;width:25%">SUMMER SALE</div>
+            <div class="clip clip-t" style="left:40%;width:25%">30% OFF</div>
+            <div class="clip clip-t" style="left:72%;width:25%">今すぐチェック</div>
+          </div>
+          <div class="lane lane-a" data-lane="a">
+            <div class="clip clip-a" style="left:0%;width:97%">upbeat_bgm.mp3</div>
+          </div>
+          <div class="playhead" id="playhead"></div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-ghost" id="exportMp4">MP4 で書き出し</button>
+          <button class="btn btn-adobe" id="exportPpro">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M3 3h7l4 8 4-8h3v18h-4V11l-4 8h-1l-4-8v10H3z"/></svg>
+            Premiere Pro へ送る
+          </button>
+          <button class="btn btn-adobe" id="exportAe">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M3 3h7l4 8 4-8h3v18h-4V11l-4 8h-1l-4-8v10H3z"/></svg>
+            After Effects へ送る
+          </button>
+        </div>
+
+        <div class="toast" id="toast"></div>
+      </main>
+    </div>
+  </div>
+</section>
+
+<section id="adobe" class="section">
+  <div class="container adobe-grid">
+    <div>
+      <span class="eyebrow">Adobe Creative Cloud Integration</span>
+      <h2 class="section-title left">Adobe との<br />シームレスな往復編集</h2>
+      <p class="section-sub left">
+        AdCut Studio で組んだ編集データは、Premiere Pro の <code>.prproj</code>、
+        After Effects の <code>.aep</code>、Photoshop の <code>.psd</code> にそれぞれ書き出せます。
+        色調整・モーション・合成といったプロの仕上げを、いつものソフトでそのまま続けられます。
+      </p>
+      <ul class="check-list">
+        <li>タイムライン・字幕・テロップ・トラックがそのまま再現</li>
+        <li>素材は Creative Cloud Libraries 経由で同期</li>
+        <li>Adobe Sensei による自動カット・自動カラーに対応</li>
+        <li>仕上げ後の最終データを AdCut に取り込み、配信用にマルチサイズ化</li>
+      </ul>
+    </div>
+    <div class="adobe-flow">
+      <div class="flow-step">
+        <div class="flow-icon" style="background:#00C8FF">Ad</div>
+        <div>
+          <h4>AdCut Studio</h4>
+          <p>テンプレ・字幕・カット編集を高速に。</p>
+        </div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-icon" style="background:#9999FF;color:#000">Pr</div>
+        <div>
+          <h4>Premiere Pro</h4>
+          <p>カラコレ・サウンドミックスで仕上げ。</p>
+        </div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-icon" style="background:#D291FF;color:#000">Ae</div>
+        <div>
+          <h4>After Effects</h4>
+          <p>モーション・合成・VFX を追加。</p>
+        </div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-icon" style="background:#31A8FF;color:#000">Ps</div>
+        <div>
+          <h4>Photoshop</h4>
+          <p>サムネ・静止バナーを生成。</p>
+        </div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-icon" style="background:#00C8FF">Ad</div>
+        <div>
+          <h4>AdCut で配信用書き出し</h4>
+          <p>Meta / Google / TikTok 用に同時書き出し。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="templates" class="section section-soft">
+  <div class="container">
+    <h2 class="section-title">広告テンプレート</h2>
+    <p class="section-sub">業界別・媒体別に最適化されたテンプレートをワンクリックで適用。</p>
+    <div class="tpl-grid">
+      <div class="tpl"><div class="tpl-thumb t1"></div><h4>EC セール 15秒</h4><p>Meta / TikTok 向け</p></div>
+      <div class="tpl"><div class="tpl-thumb t2"></div><h4>アプリ訴求 6秒</h4><p>YouTube バンパー</p></div>
+      <div class="tpl"><div class="tpl-thumb t3"></div><h4>SaaS 紹介 30秒</h4><p>LinkedIn / X 向け</p></div>
+      <div class="tpl"><div class="tpl-thumb t4"></div><h4>ブランドストーリー</h4><p>ディスプレイ広告</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing" class="section">
+  <div class="container">
+    <h2 class="section-title">プラン</h2>
+    <p class="section-sub">チームの規模と用途に合わせて選べる 3 プラン。Adobe 連携は全プランで利用可能。</p>
+    <div class="grid-3 pricing">
+      <div class="card">
+        <h3>Starter</h3>
+        <div class="price">¥0<span>/月</span></div>
+        <ul>
+          <li>720p 書き出し</li>
+          <li>テンプレ 10 種</li>
+          <li>Adobe 書き出し 月 3 本</li>
+        </ul>
+        <a href="#" class="btn btn-ghost full">無料で始める</a>
+      </div>
+      <div class="card card-accent">
+        <h3>Pro</h3>
+        <div class="price">¥4,800<span>/月</span></div>
+        <ul>
+          <li>4K 書き出し</li>
+          <li>全テンプレ・ブランドキット</li>
+          <li>Adobe 連携 無制限</li>
+          <li>レビュー & 承認フロー</li>
+        </ul>
+        <a href="#" class="btn btn-primary full">14 日間無料</a>
+      </div>
+      <div class="card">
+        <h3>Enterprise</h3>
+        <div class="price">お問合せ<span></span></div>
+        <ul>
+          <li>SSO / 監査ログ</li>
+          <li>専用サポート</li>
+          <li>API / Adobe Premiere パネル</li>
+        </ul>
+        <a href="#" class="btn btn-ghost full">問い合わせる</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="container foot">
+    <div class="logo"><span class="logo-mark"></span><span class="logo-text">AdCut <em>Studio</em></span></div>
+    <p>© 2026 AdCut Studio — Demo page. Adobe, Premiere Pro, After Effects, Photoshop は Adobe Inc. の登録商標です。</p>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
