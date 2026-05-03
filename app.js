@@ -4,7 +4,7 @@
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
   // ---------- State ----------
-  const state = {
+  const defaults = {
     headline: "SUMMER SALE",
     subline:  "30% OFF",
     cta:      "今すぐチェック",
@@ -13,6 +13,7 @@
     bgm:      "upbeat",
     enabledSizes: { "16:9": true, "1:1": true, "9:16": true },
   };
+  const state = JSON.parse(JSON.stringify(defaults));
 
   const palettes = {
     sunset: { c1: "rgba(0,200,255,.45)",  c2: "rgba(255,58,140,.45)", base: "linear-gradient(135deg,#1a2440,#341a4a 60%,#4a1a3a)" },
@@ -268,6 +269,23 @@
       });
     });
   }
+
+  // ---------- Reset to defaults ----------
+  $("#resetBtn").addEventListener("click", () => {
+    Object.assign(state, JSON.parse(JSON.stringify(defaults)));
+    fieldMap.headline.value = state.headline;
+    fieldMap.subline.value  = state.subline;
+    fieldMap.cta.value      = state.cta;
+    $("#aiPrompt").value = "";
+    $$(".pal").forEach((x) => x.classList.toggle("active", x.dataset.palette === state.palette));
+    $$(".tpl-chip[data-tpl]").forEach((x) => x.classList.toggle("active", x.dataset.tpl === state.template));
+    $$(".tpl-chip[data-bgm]").forEach((x) => x.classList.toggle("active", x.dataset.bgm === state.bgm));
+    $$('.chk input[type="checkbox"]').forEach((cb) => {
+      cb.checked = state.enabledSizes[cb.dataset.size];
+    });
+    render();
+    toast("初期状態にリセットしました");
+  });
 
   // ---------- Play all (preview animation) ----------
   $("#playAll").addEventListener("click", () => {
