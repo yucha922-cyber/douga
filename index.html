@@ -113,7 +113,7 @@
 <section id="editor" class="section section-dark">
   <div class="container">
     <h2 class="section-title light">クイック動画作成</h2>
-    <p class="section-sub light">話す・打ち込むだけで広告動画が完成。16:9 / 1:1 / 9:16 が同時に仕上がります。</p>
+    <p class="section-sub light">話す・打ち込むだけで Adobe 用の <strong>1080×1080</strong> と <strong>1080×1920</strong> の 2 サイズが同時に仕上がります。</p>
 
     <div class="qe">
       <aside class="qe-side">
@@ -167,39 +167,34 @@
             <button class="tpl-chip" data-tpl="event">イベント</button>
           </div>
 
-          <label class="qe-label">BGM</label>
-          <div class="tpl-row">
-            <button class="tpl-chip active" data-bgm="upbeat">アップビート</button>
-            <button class="tpl-chip" data-bgm="calm">カーム</button>
-            <button class="tpl-chip" data-bgm="cinematic">シネマティック</button>
+          <label class="qe-label">BGM
+            <a class="bgm-source" href="https://dova-s.jp/bgm/detail/21848/download" target="_blank" rel="noopener">DOVA-SYNDROME 提供</a>
+          </label>
+          <div class="bgm-player">
+            <audio id="bgmAudio" preload="none" crossorigin="anonymous"
+                   src="https://dova-s.jp/bgm/detail/21848/download"></audio>
+            <button id="bgmToggle" class="btn btn-ghost btn-sm" type="button">▶ BGM を試聴</button>
+            <span class="bgm-meta" id="bgmStatus">DOVA-SYNDROME #21848</span>
           </div>
+          <p class="hint">
+            BGM は
+            <a href="https://dova-s.jp/bgm/detail/21848/download" target="_blank" rel="noopener">dova-s.jp/bgm/detail/21848/download</a>
+            から読み込みます。サイトの仕様により直接再生できない場合は、上のリンクから
+            mp3 をダウンロードしてご利用ください。
+          </p>
         </div>
       </aside>
 
       <main class="qe-main">
         <div class="size-toolbar">
           <div class="size-toggle">
-            <label class="chk"><input type="checkbox" data-size="16:9" checked /> <span>16:9 YouTube / Display</span></label>
-            <label class="chk"><input type="checkbox" data-size="1:1" checked /> <span>1:1 Feed / Square</span></label>
-            <label class="chk"><input type="checkbox" data-size="9:16" checked /> <span>9:16 Reels / TikTok / Stories</span></label>
+            <label class="chk"><input type="checkbox" data-size="1:1" checked /> <span>1080×1080 Feed / Square</span></label>
+            <label class="chk"><input type="checkbox" data-size="9:16" checked /> <span>1080×1920 Reels / TikTok / Stories</span></label>
           </div>
           <button id="playAll" class="btn btn-ghost btn-sm">▶ 全サイズ同時再生</button>
         </div>
 
-        <div class="multi-preview" id="multiPreview">
-          <div class="size-card" data-size="16:9">
-            <header><span class="size-label">16:9</span><span class="size-meta">1920×1080 / 15s</span></header>
-            <div class="ad-frame ratio-16-9">
-              <div class="ad-bg"></div>
-              <div class="ad-overlay"></div>
-              <div class="ad-stack">
-                <div class="ad-headline">SUMMER SALE</div>
-                <div class="ad-subline">30% OFF</div>
-                <div class="ad-cta">今すぐチェック</div>
-              </div>
-              <div class="ad-progress"><div class="ad-progress-fill"></div></div>
-            </div>
-          </div>
+        <div class="multi-preview multi-preview-2" id="multiPreview">
           <div class="size-card" data-size="1:1">
             <header><span class="size-label">1:1</span><span class="size-meta">1080×1080 / 15s</span></header>
             <div class="ad-frame ratio-1-1">
@@ -229,8 +224,8 @@
         </div>
 
         <div class="qe-actions">
-          <button class="btn btn-primary" id="exportAll">全サイズを MP4 で書き出し</button>
-          <button class="btn btn-ghost" id="duplicateBtn">他サイズへ自動複製</button>
+          <button class="btn btn-primary" id="exportAll">2 サイズを MP4 / 画像で書き出し</button>
+          <button class="btn btn-ghost" id="duplicateBtn">1080×1080 / 1080×1920 に複製</button>
           <button class="btn btn-adobe" id="exportPpro">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M3 3h7l4 8 4-8h3v18h-4V11l-4 8h-1l-4-8v10H3z"/></svg>
             Premiere Pro へ送る
