@@ -30,10 +30,12 @@
   };
 
   const templates = {
-    ec:    { headline: "30% OFF",      subline: "5/31 (土) まで", cta: "今すぐチェック",   palette: "sunset", bgm: "dova21848" },
-    app:   { headline: "¥3,000 引き",  subline: "6/30 まで",      cta: "App Store で見る", palette: "ocean",  bgm: "dova21848" },
-    brand: { headline: "新作発売",      subline: "限定 100 点",    cta: "詳細を見る",       palette: "mono",   bgm: "dova21848" },
-    event: { headline: "入場無料",      subline: "5/10 (土) 12:00",cta: "参加登録する",     palette: "candy",  bgm: "dova21848" },
+    ec:       { label: "EC セール",    headline: "30% OFF",      subline: "5/31 (土) まで",  cta: "今すぐチェック",   palette: "sunset", bgm: "dova21848" },
+    app:      { label: "アプリ訴求",   headline: "¥3,000 引き",  subline: "6/30 まで",       cta: "App Store で見る", palette: "ocean",  bgm: "dova21848" },
+    brand:    { label: "ブランド",     headline: "新作発売",      subline: "限定 100 点",     cta: "詳細を見る",       palette: "mono",   bgm: "dova21848" },
+    event:    { label: "イベント",     headline: "入場無料",      subline: "5/10 (土) 12:00", cta: "参加登録する",     palette: "candy",  bgm: "dova21848" },
+    food:     { label: "飲食店",       headline: "ランチ ¥800",  subline: "平日 11-14 時",   cta: "今すぐ予約",       palette: "forest", bgm: "dova21848" },
+    realestate:{label: "不動産",       headline: "賃料 1ヶ月無料",subline: "5/31 まで成約で", cta: "内見を予約",       palette: "ocean",  bgm: "dova21848" },
   };
 
   // ---------- Render ----------
@@ -281,12 +283,15 @@
     return clips.reduce((s, c) => s + Math.max(0, c.out - c.in), 0);
   }
   function updateTotalMeta() {
-    if (!totalMetaEl) return;
     const tot = totalLength();
-    const flag = clips.length && Math.abs(tot - TARGET_DURATION) > 0.6;
-    totalMetaEl.innerHTML =
-      `合計 <strong>${fmt(tot)}</strong> / ${clips.length} 本` +
-      (flag ? ` <span class="warn">（目標 ${TARGET_DURATION}s）</span>` : "");
+    if (totalMetaEl) {
+      const flag = clips.length && Math.abs(tot - TARGET_DURATION) > 0.6;
+      totalMetaEl.innerHTML =
+        `合計 <strong>${fmt(tot)}</strong> / ${clips.length} 本` +
+        (flag ? ` <span class="warn">（目標 ${TARGET_DURATION}s）</span>` : "");
+    }
+    const cnt = $("#libCntVid");
+    if (cnt) cnt.textContent = `${clips.length} 本 / ${fmt(tot)}`;
   }
 
   async function readVideoMeta(file) {
@@ -522,10 +527,140 @@
     playBgm && playBgm();
   }
 
+  // ---------- Library: BGM tracks model ----------
+  /** @type {{id:string,name:string,source:'remote'|'local',url:string,buffer?:AudioBuffer,exportable:boolean}[]} */
+  const bgmTracks = [
+    { id: "dova21848", name: "DOVA-SYNDROME #21848 (試聴のみ)", source: "remote", url: BGM_URL, exportable: false },
+  ];
+  let selectedBgmId = "dova21848";
+  let bgmIdSeq = 0;
+  const bgmAudio  = $("#bgmAudio");
+  const bgmStatus = $("#bgmStatus");
+  const bgmListEl = $("#bgmList");
+
+  function selectedTrack() {
+    return bgmTracks.find((t) => t.id === selectedBgmId) || null;
+  }
+  function setBgmStatus(msg) { if (bgmStatus) bgmStatus.textContent = msg; }
+
+  function renderBgmList() {
+    if (!bgmListEl) return;
+    bgmListEl.innerHTML = "";
+    bgmTracks.forEach((t) => {
+      const li = document.createElement("li");
+      li.className = "lib-aud-row" + (t.id === selectedBgmId ? " selected" : "");
+      const note  = t.exportable ? "書き出しに焼き込み可" : "ブラウザ制約で書き出しは無音 (試聴のみ)";
+      li.innerHTML = `
+        <label class="aud-pick">
+          <input type="radio" name="bgmpick" value="${t.id}" ${t.id === selectedBgmId ? "checked" : ""} />
+          <span class="aud-icon">${t.source === "local" ? "🎵" : "🌐"}</span>
+          <span class="aud-info">
+            <span class="aud-name">${t.name}</span>
+            <span class="aud-note">${note}</span>
+          </span>
+        </label>
+        <button class="aud-play btn btn-ghost btn-sm" data-play="${t.id}" type="button">▶ 試聴</button>
+        ${t.source === "local" ? `<button class="aud-del" data-del="${t.id}" type="button" title="削除">×</button>` : ""}
+      `;
+      bgmListEl.appendChild(li);
+    });
+    const cnt = $("#libCntAud");
+    if (cnt) cnt.textContent = `${bgmTracks.length} 曲`;
+    const sel = selectedTrack();
+    setBgmStatus(sel ? `選択中: ${sel.name}` : "未選択");
+  }
+
+  if (bgmListEl) {
+    bgmListEl.addEventListener("change", (e) => {
+      const r = e.target.closest('input[name="bgmpick"]');
+      if (!r) return;
+      selectedBgmId = r.value;
+      renderBgmList();
+      const sel = selectedTrack();
+      toast(sel ? `BGM「${sel.name}」を選択しました` : "");
+    });
+    bgmListEl.addEventListener("click", (e) => {
+      const playBtn = e.target.closest("[data-play]");
+      const delBtn  = e.target.closest("[data-del]");
+      if (playBtn) {
+        const id = playBtn.dataset.play;
+        const t  = bgmTracks.find((x) => x.id === id);
+        if (!t || !bgmAudio) return;
+        if (!bgmAudio.paused && bgmAudio.dataset.playingId === id) {
+          bgmAudio.pause();
+          return;
+        }
+        bgmAudio.src = t.url;
+        bgmAudio.dataset.playingId = id;
+        bgmAudio.play().catch(() => toast("ブラウザ制約で再生できませんでした"));
+      } else if (delBtn) {
+        const id = delBtn.dataset.del;
+        const i  = bgmTracks.findIndex((x) => x.id === id);
+        if (i < 0) return;
+        const t = bgmTracks[i];
+        try { URL.revokeObjectURL(t.url); } catch {}
+        bgmTracks.splice(i, 1);
+        if (selectedBgmId === id) selectedBgmId = bgmTracks[0] ? bgmTracks[0].id : "";
+        renderBgmList();
+        toast("BGM を削除しました");
+      }
+    });
+  }
+  if (bgmAudio) {
+    bgmAudio.addEventListener("play",  () => { /* could update per-row label */ });
+    bgmAudio.addEventListener("pause", () => { bgmAudio.dataset.playingId = ""; });
+    bgmAudio.addEventListener("ended", () => { bgmAudio.dataset.playingId = ""; });
+  }
+
+  // ---------- Library: Templates gallery ----------
+  function templatePreviewCSS(p) {
+    const c = palettes[p];
+    return c ? c.base : "#1a2440";
+  }
+  function renderTemplateGallery() {
+    const grid = $("#libGridTpl");
+    if (!grid) return;
+    grid.innerHTML = "";
+    Object.entries(templates).forEach(([key, t]) => {
+      const tile = document.createElement("button");
+      tile.type = "button";
+      tile.className = "lib-tile lib-tile-tpl" + (state.template === key ? " selected" : "");
+      tile.dataset.tpl = key;
+      tile.innerHTML = `
+        <div class="tpl-prev" style="background:${templatePreviewCSS(t.palette)}">
+          <div class="tpl-prev-h">${t.headline}</div>
+          <div class="tpl-prev-s">${t.subline}</div>
+          <div class="tpl-prev-c">${t.cta}</div>
+        </div>
+        <div class="tpl-tile-name">${t.label || key}</div>
+      `;
+      tile.addEventListener("click", () => applyTemplate(key));
+      grid.appendChild(tile);
+    });
+    const cnt = $("#libCntTpl");
+    if (cnt) cnt.textContent = `${Object.keys(templates).length} 種類`;
+  }
+
+  function applyTemplate(key) {
+    const t = templates[key];
+    if (!t) return;
+    state.template = key;
+    state.headline = t.headline;
+    state.subline  = t.subline;
+    state.cta      = t.cta;
+    state.palette  = t.palette;
+    fieldMap.headline.value = state.headline;
+    fieldMap.subline.value  = state.subline;
+    fieldMap.cta.value      = state.cta;
+    $$(".pal").forEach((x) => x.classList.toggle("active", x.dataset.palette === state.palette));
+    $$(".tpl-chip[data-tpl]").forEach((x) => x.classList.toggle("active", x.dataset.tpl === key));
+    renderTemplateGallery();
+    render();
+    toast(`テンプレ「${t.label || key}」を適用しました`);
+  }
+
   // ---------- Export (Canvas + MediaRecorder + Web Audio) ----------
-  let customBgmBuffer = null;     // AudioBuffer (decoded)
-  let customBgmName   = null;
-  let exporting       = false;
+  let exporting = false;
   const epEl    = $("#exportProgress");
   const epLabel = $("#epLabel");
   const epFill  = $("#epFill");
@@ -542,7 +677,7 @@
     if (epFill) epFill.style.width = "0%";
   }
 
-  // Custom BGM upload (used because dova-s.jp doesn't expose CORS for fetch)
+  // BGM file upload → adds a new track to the library
   const bgmFileInput = $("#bgmFile");
   if (bgmFileInput) {
     bgmFileInput.addEventListener("change", async () => {
@@ -551,39 +686,45 @@
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         const arr = await f.arrayBuffer();
-        customBgmBuffer = await ctx.decodeAudioData(arr);
-        customBgmName   = f.name;
+        const buffer = await ctx.decodeAudioData(arr);
         try { await ctx.close(); } catch {}
-        if (bgmStatus) bgmStatus.textContent = `ローカル BGM: ${f.name}`;
-        // Also use it for in-page preview
-        if (bgmAudio) bgmAudio.src = URL.createObjectURL(f);
-        toast(`BGM「${f.name}」を読み込みました（書き出しに焼き込みます）`);
+        const id = `local-${++bgmIdSeq}`;
+        bgmTracks.push({
+          id, name: f.name, source: "local",
+          url: URL.createObjectURL(f),
+          buffer, exportable: true,
+        });
+        selectedBgmId = id;
+        renderBgmList();
+        toast(`BGM「${f.name}」を追加して選択しました`);
       } catch (e) {
         toast("BGM の読み込みに失敗しました");
       }
+      bgmFileInput.value = "";
     });
   }
 
   async function loadBgmBufferForExport(audioCtx) {
-    if (customBgmBuffer) {
-      // Re-decode against the export's audioCtx (AudioBuffer is bound to a context's sample rate);
-      // safer to re-decode from the file each time. We cached the decoded buffer; clone via channel data.
-      const src = customBgmBuffer;
+    const t = selectedTrack();
+    if (t && t.buffer) {
+      const src = t.buffer;
       const buf = audioCtx.createBuffer(src.numberOfChannels, src.length, src.sampleRate);
       for (let ch = 0; ch < src.numberOfChannels; ch++) {
         buf.copyToChannel(src.getChannelData(ch), ch);
       }
       return buf;
     }
-    // Best-effort fetch from dova (will likely fail by CORS)
-    try {
-      const res = await fetch(BGM_URL, { mode: "cors" });
-      if (!res.ok) throw new Error("fetch failed");
-      const arr = await res.arrayBuffer();
-      return await audioCtx.decodeAudioData(arr);
-    } catch (e) {
-      return null;
+    if (t && t.source === "remote") {
+      try {
+        const res = await fetch(t.url, { mode: "cors" });
+        if (!res.ok) throw new Error("fetch failed");
+        const arr = await res.arrayBuffer();
+        return await audioCtx.decodeAudioData(arr);
+      } catch (e) {
+        return null;
+      }
     }
+    return null;
   }
 
   function pickRecorderMime() {
@@ -905,43 +1046,18 @@
     toast("初期状態にリセットしました");
   });
 
-  // ---------- BGM (DOVA-SYNDROME) ----------
-  const bgmAudio  = $("#bgmAudio");
-  const bgmToggle = $("#bgmToggle");
-  const bgmStatus = $("#bgmStatus");
-
-  function setBgmLabel(playing) {
-    if (!bgmToggle) return;
-    bgmToggle.textContent = playing ? "■ 停止" : "▶ BGM を試聴";
-  }
-  function setBgmStatus(msg) { if (bgmStatus) bgmStatus.textContent = msg; }
-
+  // ---------- BGM playback (selected track) ----------
   function playBgm() {
     if (!bgmAudio) return;
-    if (bgmAudio.src !== BGM_URL) bgmAudio.src = BGM_URL;
+    const t = selectedTrack();
+    if (!t) return;
+    if (bgmAudio.src !== t.url) bgmAudio.src = t.url;
     const p = bgmAudio.play();
     if (p && p.catch) {
-      p.catch(() => {
-        setBgmLabel(false);
-        setBgmStatus("ブラウザ側の制限で直接再生できませんでした。リンクから DL してください。");
-        toast("BGM を直接再生できませんでした。リンクからダウンロードしてください。");
-      });
+      p.catch(() => toast("BGM を直接再生できませんでした"));
     }
   }
   function stopBgm() { if (bgmAudio) bgmAudio.pause(); }
-
-  if (bgmAudio && bgmToggle) {
-    bgmToggle.addEventListener("click", () => {
-      if (bgmAudio.paused) playBgm(); else stopBgm();
-    });
-    bgmAudio.addEventListener("play",  () => { setBgmLabel(true);  setBgmStatus("再生中: DOVA-SYNDROME #21848"); });
-    bgmAudio.addEventListener("pause", () => setBgmLabel(false));
-    bgmAudio.addEventListener("ended", () => setBgmLabel(false));
-    bgmAudio.addEventListener("error", () => {
-      setBgmLabel(false);
-      setBgmStatus("読み込みに失敗しました。リンクから DL してください。");
-    });
-  }
 
   // ---------- Play all (preview animation) ----------
   $("#playAll").addEventListener("click", () => {
@@ -967,5 +1083,8 @@
 
   // ---------- Init ----------
   if (!SR) showHintNoSupport();
+  renderTemplateGallery();
+  renderBgmList();
+  updateTotalMeta();
   render();
 })();

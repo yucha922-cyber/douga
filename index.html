@@ -132,25 +132,6 @@
           <p class="hint" id="micHint">クリップを取り込み済みなら、ここを押すだけで 15 秒に自動編集＋テロップ＋BGM 合成までやります。</p>
         </div>
 
-        <div class="field-card clip-import-card">
-          <label class="qe-label">
-            動画クリップを取り込み
-            <span class="qe-sub">最大 8 本まで・mp4 / mov / webm</span>
-          </label>
-          <label class="dropzone" id="dropzone">
-            <input id="clipInput" type="file" accept="video/*" multiple hidden />
-            <div class="dz-icon">🎞</div>
-            <div class="dz-main">クリックまたはドラッグ＆ドロップで動画を追加</div>
-            <div class="dz-sub">取り込んだ動画から「いい所」だけを自動で抽出して繋ぎます</div>
-          </label>
-          <div class="clip-list" id="clipList"></div>
-          <div class="clip-actions">
-            <button class="btn btn-ghost btn-sm" id="autoArrangeBtn" type="button" title="合計 15 秒になるよう各クリップから中央付近を抜き出します">⚡ 15 秒に自動編集</button>
-            <button class="btn btn-ghost btn-sm" id="clearClipsBtn" type="button">クリップを全消去</button>
-          </div>
-          <div class="total-meta" id="totalMeta">合計 0.0s / 0 本</div>
-        </div>
-
         <div class="field-card">
           <label class="qe-label">オファー / 割引
             <button class="mic-mini" data-target="headline" title="この欄に音声入力">🎤</button>
@@ -178,37 +159,79 @@
             <button class="pal pal-candy" data-palette="candy" title="キャンディ"></button>
           </div>
 
-          <label class="qe-label">テンプレート</label>
+          <label class="qe-label">テンプレート (クイック切替)</label>
           <div class="tpl-row">
             <button class="tpl-chip active" data-tpl="ec">EC セール</button>
             <button class="tpl-chip" data-tpl="app">アプリ訴求</button>
             <button class="tpl-chip" data-tpl="brand">ブランド</button>
             <button class="tpl-chip" data-tpl="event">イベント</button>
           </div>
-
-          <label class="qe-label">BGM
-            <a class="bgm-source" href="https://dova-s.jp/bgm/detail/21848/download" target="_blank" rel="noopener">DOVA-SYNDROME 提供</a>
-          </label>
-          <div class="bgm-player">
-            <audio id="bgmAudio" preload="none"
-                   src="https://dova-s.jp/bgm/detail/21848/download"></audio>
-            <button id="bgmToggle" class="btn btn-ghost btn-sm" type="button">▶ BGM を試聴</button>
-            <span class="bgm-meta" id="bgmStatus">DOVA-SYNDROME #21848</span>
-          </div>
-          <label class="bgm-upload">
-            <input type="file" id="bgmFile" accept="audio/*" hidden />
-            <span>📁 ローカル BGM を使う (mp3 / wav / m4a)</span>
-          </label>
-          <p class="hint">
-            ブラウザの CORS により dova-s.jp から書き出しに音声を直接焼き込めない場合は、
-            上の「ローカル BGM を使う」から
-            <a href="https://dova-s.jp/bgm/detail/21848/download" target="_blank" rel="noopener">dova-s.jp/bgm/detail/21848/download</a>
-            でダウンロードした mp3 を読み込ませてください。
-          </p>
+          <p class="hint">テンプレ・動画素材・BGM の一覧は右側 <strong>📂 ライブラリ</strong> から開けます。</p>
         </div>
       </aside>
 
       <main class="qe-main">
+        <section class="library" aria-label="アセットライブラリ">
+          <div class="library-head">
+            <span class="library-title">📂 ライブラリ</span>
+            <span class="library-sub">テンプレ画像 / 動画素材 / BGM をひとまとめに管理</span>
+          </div>
+
+          <details class="lib-folder" id="folderTemplates" open>
+            <summary>
+              <span class="folder-icon">🎨</span>
+              <span class="folder-name">テンプレート画像</span>
+              <span class="folder-count" id="libCntTpl">0 種類</span>
+            </summary>
+            <div class="lib-grid lib-grid-tpl" id="libGridTpl"></div>
+          </details>
+
+          <details class="lib-folder" id="folderVideos" open>
+            <summary>
+              <span class="folder-icon">🎞</span>
+              <span class="folder-name">動画素材 (未カット)</span>
+              <span class="folder-count" id="libCntVid">0 本 / 0.0s</span>
+            </summary>
+            <div class="lib-folder-body">
+              <label class="dropzone" id="dropzone">
+                <input id="clipInput" type="file" accept="video/*" multiple hidden />
+                <div class="dz-icon">🎞</div>
+                <div class="dz-main">クリックまたはドラッグ＆ドロップで動画を追加</div>
+                <div class="dz-sub">取り込んだ未カットの動画はこのフォルダに保管されます (最大 8 本)</div>
+              </label>
+              <div class="lib-grid lib-grid-vid" id="clipList"></div>
+              <div class="clip-actions">
+                <button class="btn btn-ghost btn-sm" id="autoArrangeBtn" type="button" title="合計 15 秒になるよう各クリップから中央付近を抜き出します">⚡ 15 秒に自動編集</button>
+                <button class="btn btn-ghost btn-sm" id="clearClipsBtn" type="button">フォルダを空にする</button>
+                <span class="total-meta" id="totalMeta">合計 0.0s / 0 本</span>
+              </div>
+            </div>
+          </details>
+
+          <details class="lib-folder" id="folderAudio" open>
+            <summary>
+              <span class="folder-icon">🎵</span>
+              <span class="folder-name">BGM</span>
+              <span class="folder-count" id="libCntAud">0 曲</span>
+            </summary>
+            <div class="lib-folder-body">
+              <audio id="bgmAudio" preload="none"></audio>
+              <ul class="lib-list lib-list-aud" id="bgmList"></ul>
+              <div class="clip-actions">
+                <label class="btn btn-ghost btn-sm" for="bgmFile">＋ BGM を追加 (mp3 / wav / m4a)</label>
+                <input type="file" id="bgmFile" accept="audio/*" hidden />
+                <span class="total-meta" id="bgmStatus">未選択</span>
+              </div>
+              <p class="hint">
+                書き出しに音声を焼き込むには、ローカルに保存した mp3 を「＋ BGM を追加」から取り込んで選択してください。
+                DOVA 配布の素材は
+                <a href="https://dova-s.jp/bgm/detail/21848/download" target="_blank" rel="noopener">dova-s.jp/bgm/detail/21848/download</a>
+                からダウンロードできます。
+              </p>
+            </div>
+          </details>
+        </section>
+
         <div class="size-toolbar">
           <div class="size-toggle">
             <label class="chk"><input type="checkbox" data-size="1:1" checked /> <span>1080×1080 Feed / Square</span></label>
