@@ -134,6 +134,14 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
 .section-soft { background: var(--bg-soft); }
 .section-dark { background: #0b0d12; color: #e6e8ef; }
 .section-dark code { background: #1c2230; color: #e6e8ef; }
+.section-dark .btn-ghost {
+  background: #161b23; color: #e6e9f0; border-color: #2a3144;
+}
+.section-dark .btn-ghost:hover {
+  background: #1f2632; border-color: #00c8ff; color: #fff;
+}
+.section-dark label.btn-ghost { display: inline-flex; align-items: center; }
+.section-dark .section-sub { color: #aab0c0; }
 .section-title { font-size: 36px; letter-spacing: -.01em; text-align: center; margin: 0 0 10px; }
 .section-title.left { text-align: left; }
 .section-title.light { color: #fff; }
