@@ -113,35 +113,54 @@
 <section id="editor" class="section section-dark">
   <div class="container">
     <h2 class="section-title light">クイック動画作成</h2>
-    <p class="section-sub light">話す・打ち込むだけで Adobe 用の <strong>1080×1080</strong> と <strong>1080×1920</strong> の 2 サイズが同時に仕上がります。</p>
+    <p class="section-sub light">動画クリップを放り込むだけ。<strong>いい所だけを 15 秒に自動編集</strong>し、割引・期限テロップ＆BGM を載せて <strong>1080×1080 / 1080×1920</strong> を同時に書き出します。</p>
 
     <div class="qe">
       <aside class="qe-side">
         <div class="prompt-card">
-          <label class="qe-label">AI プロンプト</label>
+          <label class="qe-label">AI プロンプト（割引・期限を含めるとより正確）</label>
           <div class="prompt-input">
-            <textarea id="aiPrompt" rows="3" placeholder="例: 夏のセール 30%オフ、今すぐチェック"></textarea>
+            <textarea id="aiPrompt" rows="3" placeholder="例: サマーセール 30% OFF、5/31(土)まで、今すぐチェック"></textarea>
             <button id="micPrompt" class="mic" title="音声入力">
               <span class="mic-dot"></span>🎤
             </button>
           </div>
           <div class="prompt-actions">
-            <button id="genBtn" class="btn btn-primary full">この内容で生成 →</button>
+            <button id="genBtn" class="btn btn-primary full">✨ いい感じに自動生成</button>
             <button id="resetBtn" class="btn btn-ghost full" title="入力内容を初期状態に戻します">↺ リセット</button>
           </div>
-          <p class="hint" id="micHint">音声入力は Chrome / Edge / Safari で利用できます。</p>
+          <p class="hint" id="micHint">クリップを取り込み済みなら、ここを押すだけで 15 秒に自動編集＋テロップ＋BGM 合成までやります。</p>
+        </div>
+
+        <div class="field-card clip-import-card">
+          <label class="qe-label">
+            動画クリップを取り込み
+            <span class="qe-sub">最大 8 本まで・mp4 / mov / webm</span>
+          </label>
+          <label class="dropzone" id="dropzone">
+            <input id="clipInput" type="file" accept="video/*" multiple hidden />
+            <div class="dz-icon">🎞</div>
+            <div class="dz-main">クリックまたはドラッグ＆ドロップで動画を追加</div>
+            <div class="dz-sub">取り込んだ動画から「いい所」だけを自動で抽出して繋ぎます</div>
+          </label>
+          <div class="clip-list" id="clipList"></div>
+          <div class="clip-actions">
+            <button class="btn btn-ghost btn-sm" id="autoArrangeBtn" type="button" title="合計 15 秒になるよう各クリップから中央付近を抜き出します">⚡ 15 秒に自動編集</button>
+            <button class="btn btn-ghost btn-sm" id="clearClipsBtn" type="button">クリップを全消去</button>
+          </div>
+          <div class="total-meta" id="totalMeta">合計 0.0s / 0 本</div>
         </div>
 
         <div class="field-card">
-          <label class="qe-label">見出し
+          <label class="qe-label">オファー / 割引
             <button class="mic-mini" data-target="headline" title="この欄に音声入力">🎤</button>
           </label>
-          <input id="headlineInput" type="text" value="SUMMER SALE" />
+          <input id="headlineInput" type="text" value="30% OFF" placeholder="例: 30% OFF / ¥1,000 引き" />
 
-          <label class="qe-label">サブテキスト
+          <label class="qe-label">期限 / 期間
             <button class="mic-mini" data-target="subline" title="この欄に音声入力">🎤</button>
           </label>
-          <input id="sublineInput" type="text" value="30% OFF" />
+          <input id="sublineInput" type="text" value="5/31 (土) まで" placeholder="例: 5/31 (土) まで" />
 
           <label class="qe-label">CTA ボタン
             <button class="mic-mini" data-target="cta" title="この欄に音声入力">🎤</button>
@@ -199,10 +218,11 @@
             <header><span class="size-label">1:1</span><span class="size-meta">1080×1080 / 15s</span></header>
             <div class="ad-frame ratio-1-1">
               <div class="ad-bg"></div>
+              <video class="ad-video" muted playsinline preload="auto"></video>
               <div class="ad-overlay"></div>
               <div class="ad-stack">
-                <div class="ad-headline">SUMMER SALE</div>
-                <div class="ad-subline">30% OFF</div>
+                <div class="ad-headline">30% OFF</div>
+                <div class="ad-subline">5/31 (土) まで</div>
                 <div class="ad-cta">今すぐチェック</div>
               </div>
               <div class="ad-progress"><div class="ad-progress-fill"></div></div>
@@ -212,10 +232,11 @@
             <header><span class="size-label">9:16</span><span class="size-meta">1080×1920 / 15s</span></header>
             <div class="ad-frame ratio-9-16">
               <div class="ad-bg"></div>
+              <video class="ad-video" muted playsinline preload="auto"></video>
               <div class="ad-overlay"></div>
               <div class="ad-stack">
-                <div class="ad-headline">SUMMER SALE</div>
-                <div class="ad-subline">30% OFF</div>
+                <div class="ad-headline">30% OFF</div>
+                <div class="ad-subline">5/31 (土) まで</div>
                 <div class="ad-cta">今すぐチェック</div>
               </div>
               <div class="ad-progress"><div class="ad-progress-fill"></div></div>

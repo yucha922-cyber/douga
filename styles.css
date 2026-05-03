@@ -268,6 +268,84 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
   margin: 6px 0 4px;
 }
 .bgm-meta { font-family: var(--mono); font-size: 11px; color: #6c7385; }
+
+/* CLIP IMPORT */
+.clip-import-card { position: relative; }
+.qe-sub {
+  font-family: var(--mono); font-size: 10.5px; color: #6c7385;
+  margin-left: 8px; font-weight: 500; letter-spacing: .02em;
+}
+.dropzone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; padding: 18px 14px; margin: 6px 0 10px;
+  border: 1.5px dashed #2a3144; border-radius: 12px;
+  background: #0a0e15; color: #c2c8d6; cursor: pointer;
+  transition: border-color .15s, background .15s, transform .1s;
+  text-align: center;
+}
+.dropzone:hover, .dropzone.drag {
+  border-color: #00c8ff; background: #0d1422;
+}
+.dropzone.drag { transform: scale(1.01); }
+.dz-icon { font-size: 26px; line-height: 1; }
+.dz-main { font-weight: 700; font-size: 13px; }
+.dz-sub  { font-size: 11px; color: #8b92a3; }
+
+.clip-list {
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: 320px; overflow-y: auto;
+  margin-bottom: 10px;
+}
+.clip-list:empty { display: none; }
+.clip-row {
+  display: grid; grid-template-columns: 68px 1fr 28px; gap: 10px;
+  align-items: center; padding: 8px;
+  background: #0a0e15; border: 1px solid #1c2230; border-radius: 10px;
+}
+.clip-thumb-wrap {
+  position: relative; width: 68px; aspect-ratio: 1/1;
+  border-radius: 8px; overflow: hidden; background: #000;
+}
+.clip-thumb {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  pointer-events: none;
+}
+.clip-idx {
+  position: absolute; top: 4px; left: 4px;
+  background: rgba(0,200,255,.9); color: #0a0e15;
+  font-family: var(--mono); font-size: 10px; font-weight: 800;
+  padding: 1px 5px; border-radius: 4px;
+}
+.clip-info { min-width: 0; display: grid; gap: 4px; }
+.clip-name {
+  font-size: 12.5px; font-weight: 700; color: #e6e9f0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.clip-meta {
+  font-family: var(--mono); font-size: 10.5px; color: #8b92a3;
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.clip-meta strong { color: #00c8ff; font-weight: 700; }
+.clip-sliders { display: grid; gap: 2px; }
+.clip-sliders label {
+  display: grid; grid-template-columns: 28px 1fr; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 10px; color: #6c7385;
+}
+.clip-sliders input[type="range"] { accent-color: #00c8ff; width: 100%; }
+.clip-del {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 1px solid #2a3144; background: #0a0e15; color: #c2c8d6;
+  cursor: pointer; font-size: 14px; line-height: 1;
+}
+.clip-del:hover { background: #ff3a8c; border-color: #ff3a8c; color: #fff; }
+
+.clip-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.total-meta {
+  font-family: var(--mono); font-size: 11px; color: #8b92a3;
+  text-align: right;
+}
+.total-meta strong { color: #e6e9f0; font-weight: 700; }
+.total-meta .warn { color: #ffb454; }
 .size-card {
   background: #0d1118; border: 1px solid #1c2230; border-radius: 12px; padding: 12px;
   display: grid; gap: 10px;
@@ -290,13 +368,21 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
 .ratio-9-16 { aspect-ratio: 9/16; }
 
 .ad-bg {
-  position: absolute; inset: 0;
+  position: absolute; inset: 0; z-index: 0;
   background:
     radial-gradient(60% 50% at 30% 25%, var(--c1, rgba(0,200,255,.45)), transparent 65%),
     radial-gradient(60% 50% at 75% 80%, var(--c2, rgba(255,58,140,.45)), transparent 65%);
   animation: drift 9s ease-in-out infinite alternate;
 }
-.ad-overlay { position: absolute; inset: 0; background: linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,0) 50%); }
+.ad-video {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; z-index: 1; background: #000;
+  display: block;
+}
+.ad-video:not([src]) { display: none; }
+.ad-overlay { position: absolute; inset: 0; z-index: 2; background: linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,0) 55%); }
+.ad-stack    { z-index: 3; }
+.ad-progress { z-index: 4; }
 @keyframes drift { from { transform: scale(1) translate(0,0); } to { transform: scale(1.08) translate(-3%, -2%); } }
 
 .ad-stack {
