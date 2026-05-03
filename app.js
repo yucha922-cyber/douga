@@ -4,6 +4,19 @@
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
   // ---------- State ----------
+  const fineDefaults = {
+    duration:    15,         // total target seconds (5..30)
+    textPos:     "center",   // "top" | "center" | "bottom"
+    textScale:   1.0,        // 0.7..1.4
+    dimAmount:   0.55,       // 0..0.85
+    textColor:   "#ffffff",
+    ctaBg:       "#ffffff",
+    ctaColor:    "#0e1218",
+    shadow:      "strong",   // "none" | "soft" | "strong"
+    showHeadline:true,
+    showSubline: true,
+    showCta:     true,
+  };
   const defaults = {
     headline: "30% OFF",
     subline:  "5/31 (土) まで",
@@ -13,9 +26,9 @@
     bgm:      "dova21848",
     bgImage:  null,
     enabledSizes: { "1:1": true, "9:16": true },
+    fine: JSON.parse(JSON.stringify(fineDefaults)),
   };
   const BGM_URL = "https://dova-s.jp/bgm/detail/21848/download";
-  const TARGET_DURATION = 15;   // 仕上がり尺 (秒)
   const MAX_CLIPS = 8;
   const state = JSON.parse(JSON.stringify(defaults));
   /** @type {{id:number,name:string,url:string,duration:number,in:number,out:number}[]} */
@@ -291,10 +304,10 @@
   function updateTotalMeta() {
     const tot = totalLength();
     if (totalMetaEl) {
-      const flag = clips.length && Math.abs(tot - TARGET_DURATION) > 0.6;
+      const flag = clips.length && Math.abs(tot - state.fine.duration) > 0.6;
       totalMetaEl.innerHTML =
         `合計 <strong>${fmt(tot)}</strong> / ${clips.length} 本` +
-        (flag ? ` <span class="warn">（目標 ${TARGET_DURATION}s）</span>` : "");
+        (flag ? ` <span class="warn">（目標 ${state.fine.duration}s）</span>` : "");
     }
     const cnt = $("#libCntVid");
     if (cnt) cnt.textContent = `${clips.length} 本 / ${fmt(tot)}`;
@@ -337,10 +350,10 @@
     toast(`${files.length} 本を取り込み、自動で 15 秒に並べ替えました`);
   }
 
-  // 各クリップから「中央付近のいい所」を均等に切り出して合計 TARGET_DURATION 秒に収める
+  // 各クリップから「中央付近のいい所」を均等に切り出して合計 state.fine.duration 秒に収める
   function autoArrangeClips() {
     if (!clips.length) return;
-    let target = TARGET_DURATION;
+    let target = state.fine.duration;
     const n = clips.length;
     // 1) まず均等割り
     let per = target / n;
@@ -450,7 +463,7 @@
     if (!clips.length) { toast("先にクリップを取り込んでください"); return; }
     autoArrangeClips();
     renderClipList();
-    toast(`${TARGET_DURATION} 秒に自動編集しました`);
+    toast(`${state.fine.duration} 秒に自動編集しました`);
   });
   $("#clearClipsBtn") && $("#clearClipsBtn").addEventListener("click", () => {
     if (!clips.length) return;
@@ -769,6 +782,117 @@
     toast("テンプレ画像を削除しました");
   });
 
+  // ---------- Library: Fine-tune controls ----------
+  function applyFine() {
+    // CSS vars on each .ad-frame so live preview updates immediately
+    $$(".ad-frame").forEach((f) => {
+      f.style.setProperty("--text-scale", state.fine.textScale);
+      f.style.setProperty("--dim-amount", state.fine.dimAmount);
+      f.style.setProperty("--text-color", state.fine.textColor);
+      f.style.setProperty("--cta-bg",     state.fine.ctaBg);
+      f.style.setProperty("--cta-color",  state.fine.ctaColor);
+      f.dataset.shadow = state.fine.shadow;
+    });
+    $$(".size-card").forEach((card) => {
+      const stack = card.querySelector(".ad-stack");
+      if (stack) stack.dataset.pos = state.fine.textPos;
+      const h = card.querySelector(".ad-headline");
+      const s = card.querySelector(".ad-subline");
+      const c = card.querySelector(".ad-cta");
+      if (h) h.style.display = state.fine.showHeadline ? "" : "none";
+      if (s) s.style.display = state.fine.showSubline  ? "" : "none";
+      if (c) c.style.display = state.fine.showCta      ? "" : "none";
+    });
+    // Auto-arrange button text reflects current target duration
+    const arr = $("#autoArrangeBtn");
+    if (arr) arr.textContent = `⚡ ${state.fine.duration} 秒に自動編集`;
+    updateTotalMeta();
+  }
+
+  function syncTuneInputs() {
+    const f = state.fine;
+    const el = (id) => $("#" + id);
+    if (el("tuneScale"))     el("tuneScale").value     = f.textScale;
+    if (el("tuneScaleVal"))  el("tuneScaleVal").textContent  = `×${Number(f.textScale).toFixed(2)}`;
+    if (el("tuneDim"))       el("tuneDim").value       = f.dimAmount;
+    if (el("tuneDimVal"))    el("tuneDimVal").textContent    = `${Math.round(f.dimAmount * 100)}%`;
+    if (el("tuneTextColor")) el("tuneTextColor").value = f.textColor;
+    if (el("tuneTextColorVal")) el("tuneTextColorVal").textContent = f.textColor.toUpperCase();
+    if (el("tuneCtaBg"))     el("tuneCtaBg").value     = f.ctaBg;
+    if (el("tuneCtaBgVal"))  el("tuneCtaBgVal").textContent  = f.ctaBg.toUpperCase();
+    if (el("tuneCtaColor"))  el("tuneCtaColor").value  = f.ctaColor;
+    if (el("tuneCtaColorVal")) el("tuneCtaColorVal").textContent = f.ctaColor.toUpperCase();
+    if (el("tuneShowH"))     el("tuneShowH").checked   = f.showHeadline;
+    if (el("tuneShowS"))     el("tuneShowS").checked   = f.showSubline;
+    if (el("tuneShowC"))     el("tuneShowC").checked   = f.showCta;
+    $$("#tuneDurPills [data-dur]").forEach((b) => b.classList.toggle("active", Number(b.dataset.dur) === f.duration));
+    $$("#tunePosPills [data-tpos]").forEach((b) => b.classList.toggle("active", b.dataset.tpos === f.textPos));
+    $$("#tuneShadowPills [data-shadow]").forEach((b) => b.classList.toggle("active", b.dataset.shadow === f.shadow));
+  }
+
+  function bindTuneControls() {
+    const setActive = (group, target) => $$(group).forEach((x) => x.classList.toggle("active", x === target));
+
+    $$("#tuneDurPills [data-dur]").forEach((b) => {
+      b.addEventListener("click", () => {
+        state.fine.duration = Number(b.dataset.dur);
+        setActive("#tuneDurPills [data-dur]", b);
+        applyFine();
+        if (clips.length) toast(`総尺を ${state.fine.duration}s に変更（自動編集ボタンで再分配できます）`);
+      });
+    });
+    $$("#tunePosPills [data-tpos]").forEach((b) => {
+      b.addEventListener("click", () => {
+        state.fine.textPos = b.dataset.tpos;
+        setActive("#tunePosPills [data-tpos]", b);
+        applyFine();
+      });
+    });
+    $$("#tuneShadowPills [data-shadow]").forEach((b) => {
+      b.addEventListener("click", () => {
+        state.fine.shadow = b.dataset.shadow;
+        setActive("#tuneShadowPills [data-shadow]", b);
+        applyFine();
+      });
+    });
+    const onScale = () => {
+      state.fine.textScale = Number($("#tuneScale").value);
+      $("#tuneScaleVal").textContent = `×${state.fine.textScale.toFixed(2)}`;
+      applyFine();
+    };
+    const onDim = () => {
+      state.fine.dimAmount = Number($("#tuneDim").value);
+      $("#tuneDimVal").textContent = `${Math.round(state.fine.dimAmount * 100)}%`;
+      applyFine();
+    };
+    $("#tuneScale") && $("#tuneScale").addEventListener("input", onScale);
+    $("#tuneDim")   && $("#tuneDim").addEventListener("input", onDim);
+
+    const colorBind = (inputId, valId, key) => {
+      const i = $("#" + inputId), v = $("#" + valId);
+      if (!i) return;
+      i.addEventListener("input", () => {
+        state.fine[key] = i.value;
+        if (v) v.textContent = i.value.toUpperCase();
+        applyFine();
+      });
+    };
+    colorBind("tuneTextColor", "tuneTextColorVal", "textColor");
+    colorBind("tuneCtaBg",     "tuneCtaBgVal",     "ctaBg");
+    colorBind("tuneCtaColor",  "tuneCtaColorVal",  "ctaColor");
+
+    $("#tuneShowH") && $("#tuneShowH").addEventListener("change", (e) => { state.fine.showHeadline = e.target.checked; applyFine(); });
+    $("#tuneShowS") && $("#tuneShowS").addEventListener("change", (e) => { state.fine.showSubline  = e.target.checked; applyFine(); });
+    $("#tuneShowC") && $("#tuneShowC").addEventListener("change", (e) => { state.fine.showCta      = e.target.checked; applyFine(); });
+
+    $("#tuneReset") && $("#tuneReset").addEventListener("click", () => {
+      state.fine = JSON.parse(JSON.stringify(fineDefaults));
+      syncTuneInputs();
+      applyFine();
+      toast("詳細編集をリセットしました");
+    });
+  }
+
   // ---------- Export (Canvas + MediaRecorder + Web Audio) ----------
   let exporting = false;
   const epEl    = $("#exportProgress");
@@ -905,61 +1029,76 @@
       try { ctx.drawImage(video, sx, sy, sw, sh, 0, 0, W, H); } catch {}
     }
 
-    // 3) Bottom dim gradient for legibility
+    const F = state.fine;
+
+    // 3) Bottom dim gradient for legibility (configurable opacity)
     const og = ctx.createLinearGradient(0, H * 0.35, 0, H);
     og.addColorStop(0, "rgba(0,0,0,0)");
-    og.addColorStop(1, "rgba(0,0,0,0.6)");
+    og.addColorStop(1, `rgba(0,0,0,${F.dimAmount})`);
     ctx.fillStyle = og;
     ctx.fillRect(0, 0, W, H);
 
-    // 4) Text stack (offer / deadline / CTA pill)
-    const cx = W / 2;
-    const cy = H / 2;
+    // 4) Text stack (offer / deadline / CTA pill) — honors fine controls
+    const cx   = W / 2;
     const base = Math.min(W, H);
+    // Vertical anchor based on text position
+    const cy =
+      F.textPos === "top"    ? H * 0.22 :
+      F.textPos === "bottom" ? H * 0.78 :
+                               H * 0.50;
 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#fff";
-    ctx.shadowColor   = "rgba(0,0,0,0.55)";
-    ctx.shadowBlur    = base * 0.025;
-    ctx.shadowOffsetY = base * 0.006;
+    ctx.fillStyle = F.textColor;
+    if (F.shadow === "none") {
+      ctx.shadowColor = "rgba(0,0,0,0)"; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    } else {
+      const strong = F.shadow === "strong";
+      ctx.shadowColor   = strong ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.4)";
+      ctx.shadowBlur    = base * (strong ? 0.025 : 0.015);
+      ctx.shadowOffsetY = base * (strong ? 0.006 : 0.003);
+    }
 
-    // Headline (offer)
-    const hSize = Math.round(base * 0.105);
-    ctx.font = `900 ${hSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
-    ctx.fillText(state.headline || "", cx, cy - hSize * 0.45);
+    const sc    = F.textScale;
+    const hSize = Math.round(base * 0.105 * sc);
+    const sSize = Math.round(base * 0.045 * sc);
+    const cSize = Math.round(base * 0.038 * sc);
 
-    // Subline (deadline)
-    const sSize = Math.round(base * 0.045);
-    ctx.font = `600 ${sSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
-    ctx.fillText(state.subline || "", cx, cy + hSize * 0.35);
+    if (F.showHeadline) {
+      ctx.font = `900 ${hSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
+      ctx.fillText(state.headline || "", cx, cy - hSize * 0.45);
+    }
+    if (F.showSubline) {
+      ctx.font = `600 ${sSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
+      ctx.fillText(state.subline || "", cx, cy + hSize * 0.35);
+    }
 
     ctx.shadowBlur = 0;
     ctx.shadowOffsetY = 0;
 
-    // CTA pill
-    const cSize  = Math.round(base * 0.038);
-    ctx.font = `800 ${cSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
-    const cText  = state.cta || "";
-    const tw     = ctx.measureText(cText).width;
-    const padX   = cSize * 1.4;
-    const padY   = cSize * 0.7;
-    const pillW  = tw + padX * 2;
-    const pillH  = cSize + padY * 2;
-    const pillX  = cx - pillW / 2;
-    const pillY  = cy + hSize * 0.95;
-    const r      = pillH / 2;
-    ctx.fillStyle = "#fff";
-    ctx.beginPath();
-    ctx.moveTo(pillX + r, pillY);
-    ctx.arcTo(pillX + pillW, pillY, pillX + pillW, pillY + r, r);
-    ctx.arcTo(pillX + pillW, pillY + pillH, pillX + pillW - r, pillY + pillH, r);
-    ctx.arcTo(pillX, pillY + pillH, pillX, pillY + pillH - r, r);
-    ctx.arcTo(pillX, pillY, pillX + r, pillY, r);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#0e1218";
-    ctx.fillText(cText, cx, pillY + pillH / 2 + cSize * 0.05);
+    if (F.showCta) {
+      ctx.font = `800 ${cSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
+      const cText  = state.cta || "";
+      const tw     = ctx.measureText(cText).width;
+      const padX   = cSize * 1.4;
+      const padY   = cSize * 0.7;
+      const pillW  = tw + padX * 2;
+      const pillH  = cSize + padY * 2;
+      const pillX  = cx - pillW / 2;
+      const pillY  = cy + hSize * 0.95;
+      const r      = pillH / 2;
+      ctx.fillStyle = F.ctaBg;
+      ctx.beginPath();
+      ctx.moveTo(pillX + r, pillY);
+      ctx.arcTo(pillX + pillW, pillY, pillX + pillW, pillY + r, r);
+      ctx.arcTo(pillX + pillW, pillY + pillH, pillX + pillW - r, pillY + pillH, r);
+      ctx.arcTo(pillX, pillY + pillH, pillX, pillY + pillH - r, r);
+      ctx.arcTo(pillX, pillY, pillX + r, pillY, r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = F.ctaColor;
+      ctx.fillText(cText, cx, pillY + pillH / 2 + cSize * 0.05);
+    }
 
     // 5) Progress bar at bottom
     const barH = Math.max(3, Math.round(H * 0.005));
@@ -1164,6 +1303,8 @@
       cb.checked = state.enabledSizes[cb.dataset.size];
     });
     renderTemplateGallery();
+    syncTuneInputs();
+    applyFine();
     render();
     toast("初期状態にリセットしました");
   });
@@ -1207,6 +1348,9 @@
   if (!SR) showHintNoSupport();
   renderTemplateGallery();
   renderBgmList();
+  bindTuneControls();
+  syncTuneInputs();
+  applyFine();
   updateTotalMeta();
   render();
 })();

@@ -395,6 +395,48 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
 .tpl-add-text { font-size: 12.5px; font-weight: 700; }
 .tpl-add-sub  { font-size: 10.5px; }
 
+/* Fine-tune panel */
+.tune-grid { display: grid; gap: 10px; }
+.tune-row {
+  display: grid; grid-template-columns: 96px 1fr auto; gap: 10px;
+  align-items: center;
+}
+.tune-label { font-size: 11.5px; color: #c2c8d6; font-weight: 600; }
+.tune-pills { display: flex; gap: 4px; flex-wrap: wrap; }
+.tune-pill {
+  padding: 5px 10px; font-size: 11.5px;
+  background: #161b23; color: #c2c8d6;
+  border: 1px solid #2a3144; border-radius: 999px;
+  cursor: pointer; font-family: var(--mono);
+  transition: background .12s, color .12s, border-color .12s;
+}
+.tune-pill:hover { border-color: #00c8ff; color: #fff; }
+.tune-pill.active {
+  background: linear-gradient(135deg, #00c8ff, #6f5cff);
+  color: #fff; border-color: transparent;
+}
+.tune-val {
+  font-family: var(--mono); font-size: 11px; color: #8b92a3;
+  min-width: 56px; text-align: right;
+}
+.tune-row input[type="range"] { accent-color: #00c8ff; width: 100%; }
+.tune-row input[type="color"] {
+  width: 44px; height: 28px; border: 1px solid #2a3144; border-radius: 6px;
+  background: #0a0e15; cursor: pointer; padding: 2px;
+}
+.tune-checks {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  font-size: 12px; color: #c2c8d6;
+}
+.tune-checks label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.tune-checks input[type="checkbox"] { accent-color: #00c8ff; }
+.tune-actions { display: flex; justify-content: flex-end; padding-top: 4px; }
+
+@media (max-width: 700px) {
+  .tune-row { grid-template-columns: 1fr; }
+  .tune-val { text-align: left; }
+}
+
 /* Videos folder: stack of clip rows */
 .lib-grid-vid {
   display: flex; flex-direction: column; gap: 8px;
@@ -579,7 +621,10 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
   display: block;
 }
 .ad-video:not([src]) { display: none; }
-.ad-overlay { position: absolute; inset: 0; z-index: 2; background: linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,0) 55%); }
+.ad-overlay {
+  position: absolute; inset: 0; z-index: 2;
+  background: linear-gradient(0deg, rgba(0,0,0, var(--dim-amount, .55)), rgba(0,0,0,0) 55%);
+}
 .ad-stack    { z-index: 3; }
 .ad-progress { z-index: 4; }
 @keyframes drift { from { transform: scale(1) translate(0,0); } to { transform: scale(1.08) translate(-3%, -2%); } }
@@ -587,18 +632,31 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
 .ad-stack {
   position: absolute; inset: 0; padding: 8% 8%;
   display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;
-  gap: 4%; color: #fff;
+  gap: 4%; color: var(--text-color, #fff);
 }
+.ad-stack[data-pos="top"]    { justify-content: flex-start; }
+.ad-stack[data-pos="bottom"] { justify-content: flex-end; }
 .ad-headline {
-  font-weight: 900; font-size: clamp(14px, 5cqw, 36px); letter-spacing: .03em;
-  text-shadow: 0 4px 18px rgba(0,0,0,.45); line-height: 1.1; container-type: inline-size;
+  font-weight: 900; font-size: calc(clamp(14px, 5cqw, 36px) * var(--text-scale, 1)); letter-spacing: .03em;
+  line-height: 1.1; container-type: inline-size;
 }
-.ad-subline { font-size: clamp(10px, 3cqw, 18px); font-weight: 600; opacity: .92; letter-spacing: .04em; }
+.ad-subline {
+  font-weight: 600; opacity: .92; letter-spacing: .04em;
+  font-size: calc(clamp(10px, 3cqw, 18px) * var(--text-scale, 1));
+}
 .ad-cta {
   margin-top: 4%; padding: 2.5% 6%; border-radius: 999px;
-  background: #fff; color: #0e1218; font-weight: 800; font-size: clamp(9px, 2.6cqw, 14px); letter-spacing: .03em;
+  background: var(--cta-bg, #fff); color: var(--cta-color, #0e1218); font-weight: 800;
+  font-size: calc(clamp(9px, 2.6cqw, 14px) * var(--text-scale, 1)); letter-spacing: .03em;
   box-shadow: 0 6px 16px rgba(0,0,0,.3);
 }
+/* shadow strength via .ad-frame[data-shadow] */
+.ad-frame[data-shadow="strong"] .ad-headline,
+.ad-frame[data-shadow="strong"] .ad-subline { text-shadow: 0 4px 18px rgba(0,0,0,.55); }
+.ad-frame[data-shadow="soft"]   .ad-headline,
+.ad-frame[data-shadow="soft"]   .ad-subline { text-shadow: 0 2px 8px rgba(0,0,0,.35); }
+.ad-frame[data-shadow="none"]   .ad-headline,
+.ad-frame[data-shadow="none"]   .ad-subline { text-shadow: none; }
 .ad-frame { container-type: inline-size; }
 
 .ad-progress {
