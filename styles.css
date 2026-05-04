@@ -404,17 +404,21 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
 .tune-label { font-size: 11.5px; color: #c2c8d6; font-weight: 600; }
 .tune-pills { display: flex; gap: 4px; flex-wrap: wrap; }
 .tune-pill {
-  padding: 5px 10px; font-size: 11.5px;
+  appearance: none; -webkit-appearance: none;
+  padding: 5px 12px; font-size: 11.5px;
   background: #161b23; color: #c2c8d6;
   border: 1px solid #2a3144; border-radius: 999px;
   cursor: pointer; font-family: var(--mono);
-  transition: background .12s, color .12s, border-color .12s;
+  outline: 0; line-height: 1.4;
+  transition: background .12s, color .12s, border-color .12s, box-shadow .12s;
 }
 .tune-pill:hover { border-color: #00c8ff; color: #fff; }
 .tune-pill.active {
   background: linear-gradient(135deg, #00c8ff, #6f5cff);
   color: #fff; border-color: transparent;
+  box-shadow: 0 4px 14px rgba(0,200,255,.25);
 }
+.tune-pill:focus-visible { box-shadow: 0 0 0 2px rgba(0,200,255,.45); }
 .tune-val {
   font-family: var(--mono); font-size: 11px; color: #8b92a3;
   min-width: 56px; text-align: right;

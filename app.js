@@ -822,14 +822,15 @@
 
   // ---------- Library: Fine-tune controls ----------
   function applyFine() {
+    const F = state.fine;
     // CSS vars on each .ad-frame so live preview updates immediately
     $$(".ad-frame").forEach((f) => {
-      f.style.setProperty("--text-scale", state.fine.textScale);
-      f.style.setProperty("--dim-amount", state.fine.dimAmount);
-      f.style.setProperty("--text-color", state.fine.textColor);
-      f.style.setProperty("--cta-bg",     state.fine.ctaBg);
-      f.style.setProperty("--cta-color",  state.fine.ctaColor);
-      f.dataset.shadow = state.fine.shadow;
+      f.style.setProperty("--text-scale", String(F.textScale));
+      f.style.setProperty("--dim-amount", String(F.dimAmount));
+      f.style.setProperty("--text-color", String(F.textColor));
+      f.style.setProperty("--cta-bg",     String(F.ctaBg));
+      f.style.setProperty("--cta-color",  String(F.ctaColor));
+      f.dataset.shadow = F.shadow;
     });
     $$(".size-card").forEach((card) => {
       const stack = card.querySelector(".ad-stack");
