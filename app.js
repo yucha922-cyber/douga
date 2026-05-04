@@ -4,6 +4,21 @@
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
   // ---------- State ----------
+  const fineDefaults = {
+    duration:    15,         // total target seconds (5..30)
+    textPos:     "center",   // "top" | "center" | "bottom"
+    textScale:   1.0,        // 0.7..1.4
+    dimAmount:   0.55,       // 0..0.85
+    textColor:   "#ffffff",
+    ctaBg:       "#ffffff",
+    ctaColor:    "#0e1218",
+    shadow:      "strong",   // "none" | "soft" | "strong"
+    transition:  "fade",     // "cut" | "fade" | "slide" | "zoom"
+    showHeadline:true,
+    showSubline: true,
+    showCta:     true,
+  };
+  const TRANSITION_DUR = 0.22; // seconds per outgoing/incoming half
   const defaults = {
     headline: "30% OFF",
     subline:  "5/31 (土) まで",
@@ -11,10 +26,11 @@
     palette:  "sunset",
     template: "ec",
     bgm:      "dova21848",
+    bgImage:  null,
     enabledSizes: { "1:1": true, "9:16": true },
+    fine: JSON.parse(JSON.stringify(fineDefaults)),
   };
   const BGM_URL = "https://dova-s.jp/bgm/detail/21848/download";
-  const TARGET_DURATION = 15;   // 仕上がり尺 (秒)
   const MAX_CLIPS = 8;
   const state = JSON.parse(JSON.stringify(defaults));
   /** @type {{id:number,name:string,url:string,duration:number,in:number,out:number}[]} */
@@ -38,6 +54,13 @@
     realestate:{label: "不動産",       headline: "賃料 1ヶ月無料",subline: "5/31 まで成約で", cta: "内見を予約",       palette: "ocean",  bgm: "dova21848" },
   };
 
+  // ---------- User-uploaded template images ----------
+  /** @type {{id:string,label:string,url:string}[]} */
+  const userTemplates = [];
+  let tplIdSeq = 0;
+  /** @type {HTMLImageElement|null} preloaded for canvas export */
+  let bgImageEl = null;
+
   // ---------- Render ----------
   function render() {
     $$(".size-card").forEach((card) => {
@@ -53,6 +76,17 @@
       frame.style.background = p.base;
       frame.style.setProperty("--c1", p.c1);
       frame.style.setProperty("--c2", p.c2);
+
+      const img = card.querySelector(".ad-bg-image");
+      if (img) {
+        if (state.bgImage) {
+          if (img.getAttribute("src") !== state.bgImage.url) img.src = state.bgImage.url;
+          img.style.display = "";
+        } else {
+          img.removeAttribute("src");
+          img.style.display = "none";
+        }
+      }
     });
   }
 
@@ -81,21 +115,8 @@
 
   $$(".tpl-chip[data-tpl]").forEach((b) => {
     b.addEventListener("click", () => {
-      $$(".tpl-chip[data-tpl]").forEach((x) => x.classList.remove("active"));
-      b.classList.add("active");
-      const t = templates[b.dataset.tpl];
-      state.template = b.dataset.tpl;
-      Object.assign(state, t);
-      // sync inputs
-      fieldMap.headline.value = state.headline;
-      fieldMap.subline.value  = state.subline;
-      fieldMap.cta.value      = state.cta;
-      // sync palette pill
-      $$(".pal").forEach((x) => x.classList.toggle("active", x.dataset.palette === state.palette));
-      // sync bgm pill
-      $$(".tpl-chip[data-bgm]").forEach((x) => x.classList.toggle("active", x.dataset.bgm === state.bgm));
-      render();
-      toast(`テンプレ「${b.textContent.trim()}」を適用しました`);
+      // applyTemplate() handles state, bgImage clearing, gallery + render sync
+      applyTemplate(b.dataset.tpl);
     });
   });
 
@@ -285,10 +306,10 @@
   function updateTotalMeta() {
     const tot = totalLength();
     if (totalMetaEl) {
-      const flag = clips.length && Math.abs(tot - TARGET_DURATION) > 0.6;
+      const flag = clips.length && Math.abs(tot - state.fine.duration) > 0.6;
       totalMetaEl.innerHTML =
         `合計 <strong>${fmt(tot)}</strong> / ${clips.length} 本` +
-        (flag ? ` <span class="warn">（目標 ${TARGET_DURATION}s）</span>` : "");
+        (flag ? ` <span class="warn">（目標 ${state.fine.duration}s）</span>` : "");
     }
     const cnt = $("#libCntVid");
     if (cnt) cnt.textContent = `${clips.length} 本 / ${fmt(tot)}`;
@@ -331,10 +352,10 @@
     toast(`${files.length} 本を取り込み、自動で 15 秒に並べ替えました`);
   }
 
-  // 各クリップから「中央付近のいい所」を均等に切り出して合計 TARGET_DURATION 秒に収める
+  // 各クリップから「中央付近のいい所」を均等に切り出して合計 state.fine.duration 秒に収める
   function autoArrangeClips() {
     if (!clips.length) return;
-    let target = TARGET_DURATION;
+    let target = state.fine.duration;
     const n = clips.length;
     // 1) まず均等割り
     let per = target / n;
@@ -444,7 +465,7 @@
     if (!clips.length) { toast("先にクリップを取り込んでください"); return; }
     autoArrangeClips();
     renderClipList();
-    toast(`${TARGET_DURATION} 秒に自動編集しました`);
+    toast(`${state.fine.duration} 秒に自動編集しました`);
   });
   $("#clearClipsBtn") && $("#clearClipsBtn").addEventListener("click", () => {
     if (!clips.length) return;
@@ -456,13 +477,34 @@
   });
 
   // ---------- Stitched playback (sync across both size cards) ----------
-  let playState = null; // { idx, clip, raf, onTime }
+  let playState = null; // { idx, clip, raf, onTime, transTimers:[] }
+
+  function clearTransitionFx() {
+    $$(".ad-frame").forEach((f) => {
+      f.classList.remove("is-transitioning", "trans-fade", "trans-slide", "trans-zoom");
+    });
+  }
+
+  function triggerLivePreviewTransition(type) {
+    if (type === "cut") return;
+    $$(".ad-frame").forEach((f) => {
+      f.classList.remove("trans-fade", "trans-slide", "trans-zoom");
+      // Force reflow so the animation restarts each time
+      void f.offsetWidth;
+      f.classList.add("is-transitioning", `trans-${type}`);
+    });
+    return setTimeout(clearTransitionFx, TRANSITION_DUR * 2 * 1000 + 60);
+  }
 
   function stopStitched() {
     if (playState && playState.onTime) {
       adVideos.forEach((v) => v.removeEventListener("timeupdate", playState.onTime));
     }
+    if (playState && playState.transTimers) {
+      playState.transTimers.forEach((t) => clearTimeout(t));
+    }
     adVideos.forEach((v) => { try { v.pause(); } catch {} });
+    clearTransitionFx();
     playState = null;
     setProgress(0);
     stopBgm && stopBgm();
@@ -483,6 +525,20 @@
     const grandTotal = totals.reduce((a, b) => a + b, 0);
     let cumPrev = 0;
     let i = 0;
+    const transTimers = [];
+
+    const scheduleTransitionForClip = (idx) => {
+      const type = state.fine.transition || "cut";
+      if (type === "cut") return;
+      if (idx >= seq.length - 1) return;
+      const c    = seq[idx];
+      const cLen = Math.max(0, c.out - c.in);
+      // Only schedule when there's room for both halves of the transition
+      if (cLen < TRANSITION_DUR * 2.2) return;
+      const triggerInMs = (cLen - TRANSITION_DUR) * 1000;
+      const t = setTimeout(() => triggerLivePreviewTransition(type), triggerInMs);
+      transTimers.push(t);
+    };
 
     const playClip = (idx) => {
       const c = seq[idx];
@@ -495,6 +551,7 @@
         if (v.readyState >= 2) playWhenReady();
         else v.addEventListener("loadeddata", playWhenReady, { once: true });
       });
+      scheduleTransitionForClip(idx);
     };
 
     const onTime = () => {
@@ -521,7 +578,7 @@
       }
     };
 
-    playState = { idx: 0, onTime };
+    playState = { idx: 0, onTime, transTimers };
     adVideos.forEach((v) => v.addEventListener("timeupdate", onTime));
     playClip(0);
     playBgm && playBgm();
@@ -621,10 +678,13 @@
     const grid = $("#libGridTpl");
     if (!grid) return;
     grid.innerHTML = "";
+
+    // 1) Built-in templates (palette-based)
     Object.entries(templates).forEach(([key, t]) => {
       const tile = document.createElement("button");
       tile.type = "button";
-      tile.className = "lib-tile lib-tile-tpl" + (state.template === key ? " selected" : "");
+      const isActive = state.template === key && !state.bgImage;
+      tile.className = "lib-tile lib-tile-tpl" + (isActive ? " selected" : "");
       tile.dataset.tpl = key;
       tile.innerHTML = `
         <div class="tpl-prev" style="background:${templatePreviewCSS(t.palette)}">
@@ -637,14 +697,55 @@
       tile.addEventListener("click", () => applyTemplate(key));
       grid.appendChild(tile);
     });
+
+    // 2) User-uploaded templates
+    userTemplates.forEach((u) => {
+      const tile = document.createElement("button");
+      tile.type = "button";
+      const isActive = state.bgImage && state.bgImage.id === u.id;
+      tile.className = "lib-tile lib-tile-tpl lib-tile-tpl-user" + (isActive ? " selected" : "");
+      tile.dataset.userTpl = u.id;
+      tile.innerHTML = `
+        <div class="tpl-prev" style="background-image:url('${u.url}')">
+          <div class="tpl-prev-dim"></div>
+          <div class="tpl-prev-h">${state.headline || ""}</div>
+          <div class="tpl-prev-s">${state.subline || ""}</div>
+          <div class="tpl-prev-c">${state.cta || ""}</div>
+        </div>
+        <div class="tpl-tile-name" title="${u.label}">${u.label}</div>
+        <button class="tpl-del" data-tpl-del="${u.id}" type="button" title="削除">×</button>
+      `;
+      tile.addEventListener("click", (e) => {
+        if (e.target.closest("[data-tpl-del]")) return;
+        applyUserTemplate(u.id);
+      });
+      grid.appendChild(tile);
+    });
+
+    // 3) "+ Add" tile
+    const addTile = document.createElement("button");
+    addTile.type = "button";
+    addTile.className = "lib-tile lib-tile-add";
+    addTile.innerHTML = `
+      <div class="tpl-add-prev">
+        <div class="tpl-add-icon">＋</div>
+        <div class="tpl-add-text">画像を追加</div>
+        <div class="tpl-add-sub">JPG / PNG / WebP</div>
+      </div>
+    `;
+    addTile.addEventListener("click", () => tplFileInput.click());
+    grid.appendChild(addTile);
+
     const cnt = $("#libCntTpl");
-    if (cnt) cnt.textContent = `${Object.keys(templates).length} 種類`;
+    if (cnt) cnt.textContent = `${Object.keys(templates).length + userTemplates.length} 種類`;
   }
 
   function applyTemplate(key) {
     const t = templates[key];
     if (!t) return;
     state.template = key;
+    state.bgImage  = null;
+    bgImageEl      = null;
     state.headline = t.headline;
     state.subline  = t.subline;
     state.cta      = t.cta;
@@ -657,6 +758,186 @@
     renderTemplateGallery();
     render();
     toast(`テンプレ「${t.label || key}」を適用しました`);
+  }
+
+  function applyUserTemplate(id) {
+    const u = userTemplates.find((x) => x.id === id);
+    if (!u) return;
+    state.bgImage = { id: u.id, url: u.url, name: u.label };
+    state.template = `user-${id}`;
+    // Preload for canvas export
+    bgImageEl = new Image();
+    bgImageEl.crossOrigin = "anonymous";
+    bgImageEl.src = u.url;
+    bgImageEl.onload = () => render();
+    $$(".tpl-chip[data-tpl]").forEach((x) => x.classList.remove("active"));
+    renderTemplateGallery();
+    render();
+    toast(`画像テンプレ「${u.label}」を適用しました`);
+  }
+
+  // Hidden file input for template image upload (created once, multi-select)
+  const tplFileInput = document.createElement("input");
+  tplFileInput.type = "file";
+  tplFileInput.accept = "image/*";
+  tplFileInput.multiple = true;
+  tplFileInput.style.display = "none";
+  document.body.appendChild(tplFileInput);
+  tplFileInput.addEventListener("change", () => {
+    const files = Array.from(tplFileInput.files || []).filter((f) => f.type.startsWith("image/"));
+    if (!files.length) return;
+    let lastId = null;
+    files.forEach((f) => {
+      const id    = `usr-${++tplIdSeq}`;
+      const url   = URL.createObjectURL(f);
+      const label = f.name.replace(/\.[^.]+$/, "");
+      userTemplates.push({ id, label, url });
+      lastId = id;
+    });
+    renderTemplateGallery();
+    if (lastId) applyUserTemplate(lastId);
+    tplFileInput.value = "";
+    toast(`${files.length} 枚をテンプレ画像フォルダに追加しました`);
+  });
+
+  // Delete user-uploaded template
+  document.addEventListener("click", (e) => {
+    const del = e.target.closest("[data-tpl-del]");
+    if (!del) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = del.dataset.tplDel;
+    const i  = userTemplates.findIndex((x) => x.id === id);
+    if (i < 0) return;
+    try { URL.revokeObjectURL(userTemplates[i].url); } catch {}
+    userTemplates.splice(i, 1);
+    if (state.bgImage && state.bgImage.id === id) {
+      state.bgImage = null;
+      bgImageEl     = null;
+    }
+    renderTemplateGallery();
+    render();
+    toast("テンプレ画像を削除しました");
+  });
+
+  // ---------- Library: Fine-tune controls ----------
+  function applyFine() {
+    // CSS vars on each .ad-frame so live preview updates immediately
+    $$(".ad-frame").forEach((f) => {
+      f.style.setProperty("--text-scale", state.fine.textScale);
+      f.style.setProperty("--dim-amount", state.fine.dimAmount);
+      f.style.setProperty("--text-color", state.fine.textColor);
+      f.style.setProperty("--cta-bg",     state.fine.ctaBg);
+      f.style.setProperty("--cta-color",  state.fine.ctaColor);
+      f.dataset.shadow = state.fine.shadow;
+    });
+    $$(".size-card").forEach((card) => {
+      const stack = card.querySelector(".ad-stack");
+      if (stack) stack.dataset.pos = state.fine.textPos;
+      const h = card.querySelector(".ad-headline");
+      const s = card.querySelector(".ad-subline");
+      const c = card.querySelector(".ad-cta");
+      if (h) h.style.display = state.fine.showHeadline ? "" : "none";
+      if (s) s.style.display = state.fine.showSubline  ? "" : "none";
+      if (c) c.style.display = state.fine.showCta      ? "" : "none";
+    });
+    // Auto-arrange button text reflects current target duration
+    const arr = $("#autoArrangeBtn");
+    if (arr) arr.textContent = `⚡ ${state.fine.duration} 秒に自動編集`;
+    updateTotalMeta();
+  }
+
+  function syncTuneInputs() {
+    const f = state.fine;
+    const el = (id) => $("#" + id);
+    if (el("tuneScale"))     el("tuneScale").value     = f.textScale;
+    if (el("tuneScaleVal"))  el("tuneScaleVal").textContent  = `×${Number(f.textScale).toFixed(2)}`;
+    if (el("tuneDim"))       el("tuneDim").value       = f.dimAmount;
+    if (el("tuneDimVal"))    el("tuneDimVal").textContent    = `${Math.round(f.dimAmount * 100)}%`;
+    if (el("tuneTextColor")) el("tuneTextColor").value = f.textColor;
+    if (el("tuneTextColorVal")) el("tuneTextColorVal").textContent = f.textColor.toUpperCase();
+    if (el("tuneCtaBg"))     el("tuneCtaBg").value     = f.ctaBg;
+    if (el("tuneCtaBgVal"))  el("tuneCtaBgVal").textContent  = f.ctaBg.toUpperCase();
+    if (el("tuneCtaColor"))  el("tuneCtaColor").value  = f.ctaColor;
+    if (el("tuneCtaColorVal")) el("tuneCtaColorVal").textContent = f.ctaColor.toUpperCase();
+    if (el("tuneShowH"))     el("tuneShowH").checked   = f.showHeadline;
+    if (el("tuneShowS"))     el("tuneShowS").checked   = f.showSubline;
+    if (el("tuneShowC"))     el("tuneShowC").checked   = f.showCta;
+    $$("#tuneDurPills [data-dur]").forEach((b) => b.classList.toggle("active", Number(b.dataset.dur) === f.duration));
+    $$("#tunePosPills [data-tpos]").forEach((b) => b.classList.toggle("active", b.dataset.tpos === f.textPos));
+    $$("#tuneShadowPills [data-shadow]").forEach((b) => b.classList.toggle("active", b.dataset.shadow === f.shadow));
+    $$("#tuneTransPills [data-trans]").forEach((b) => b.classList.toggle("active", b.dataset.trans === f.transition));
+  }
+
+  function bindTuneControls() {
+    const setActive = (group, target) => $$(group).forEach((x) => x.classList.toggle("active", x === target));
+
+    $$("#tuneDurPills [data-dur]").forEach((b) => {
+      b.addEventListener("click", () => {
+        state.fine.duration = Number(b.dataset.dur);
+        setActive("#tuneDurPills [data-dur]", b);
+        applyFine();
+        if (clips.length) toast(`総尺を ${state.fine.duration}s に変更（自動編集ボタンで再分配できます）`);
+      });
+    });
+    $$("#tunePosPills [data-tpos]").forEach((b) => {
+      b.addEventListener("click", () => {
+        state.fine.textPos = b.dataset.tpos;
+        setActive("#tunePosPills [data-tpos]", b);
+        applyFine();
+      });
+    });
+    $$("#tuneShadowPills [data-shadow]").forEach((b) => {
+      b.addEventListener("click", () => {
+        state.fine.shadow = b.dataset.shadow;
+        setActive("#tuneShadowPills [data-shadow]", b);
+        applyFine();
+      });
+    });
+    $$("#tuneTransPills [data-trans]").forEach((b) => {
+      b.addEventListener("click", () => {
+        state.fine.transition = b.dataset.trans;
+        setActive("#tuneTransPills [data-trans]", b);
+        applyFine();
+        if (clips.length > 1) toast(`クリップ間エフェクトを「${b.textContent.trim()}」に変更しました`);
+      });
+    });
+    const onScale = () => {
+      state.fine.textScale = Number($("#tuneScale").value);
+      $("#tuneScaleVal").textContent = `×${state.fine.textScale.toFixed(2)}`;
+      applyFine();
+    };
+    const onDim = () => {
+      state.fine.dimAmount = Number($("#tuneDim").value);
+      $("#tuneDimVal").textContent = `${Math.round(state.fine.dimAmount * 100)}%`;
+      applyFine();
+    };
+    $("#tuneScale") && $("#tuneScale").addEventListener("input", onScale);
+    $("#tuneDim")   && $("#tuneDim").addEventListener("input", onDim);
+
+    const colorBind = (inputId, valId, key) => {
+      const i = $("#" + inputId), v = $("#" + valId);
+      if (!i) return;
+      i.addEventListener("input", () => {
+        state.fine[key] = i.value;
+        if (v) v.textContent = i.value.toUpperCase();
+        applyFine();
+      });
+    };
+    colorBind("tuneTextColor", "tuneTextColorVal", "textColor");
+    colorBind("tuneCtaBg",     "tuneCtaBgVal",     "ctaBg");
+    colorBind("tuneCtaColor",  "tuneCtaColorVal",  "ctaColor");
+
+    $("#tuneShowH") && $("#tuneShowH").addEventListener("change", (e) => { state.fine.showHeadline = e.target.checked; applyFine(); });
+    $("#tuneShowS") && $("#tuneShowS").addEventListener("change", (e) => { state.fine.showSubline  = e.target.checked; applyFine(); });
+    $("#tuneShowC") && $("#tuneShowC").addEventListener("change", (e) => { state.fine.showCta      = e.target.checked; applyFine(); });
+
+    $("#tuneReset") && $("#tuneReset").addEventListener("click", () => {
+      state.fine = JSON.parse(JSON.stringify(fineDefaults));
+      syncTuneInputs();
+      applyFine();
+      toast("詳細編集をリセットしました");
+    });
   }
 
   // ---------- Export (Canvas + MediaRecorder + Web Audio) ----------
@@ -765,81 +1046,122 @@
     return map[name] || map.sunset;
   }
 
-  function drawExportFrame(ctx, video, W, H, progress) {
-    // 1) Background (gradient fallback when video frame not ready)
-    const cols = paletteBaseColors(state.palette);
-    const bg = ctx.createLinearGradient(0, 0, W, H);
-    bg.addColorStop(0,  cols[0]);
-    bg.addColorStop(0.6, cols[1]);
-    bg.addColorStop(1,  cols[2]);
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, H);
+  function drawExportFrame(ctx, video, W, H, progress, trans) {
+    trans = trans || { type: "cut", phase: "none", p: 0 };
+    // 1) Background — user template image if available, else palette gradient
+    if (bgImageEl && bgImageEl.complete && bgImageEl.naturalWidth) {
+      const iw = bgImageEl.naturalWidth, ih = bgImageEl.naturalHeight;
+      const sr = iw / ih, dr = W / H;
+      let sx, sy, sw, sh;
+      if (sr > dr) { sh = ih; sw = ih * dr; sx = (iw - sw) / 2; sy = 0; }
+      else         { sw = iw; sh = iw / dr; sx = 0; sy = (ih - sh) / 2; }
+      try { ctx.drawImage(bgImageEl, sx, sy, sw, sh, 0, 0, W, H); }
+      catch { ctx.fillStyle = "#0a0e15"; ctx.fillRect(0, 0, W, H); }
+    } else {
+      const cols = paletteBaseColors(state.palette);
+      const bg = ctx.createLinearGradient(0, 0, W, H);
+      bg.addColorStop(0,   cols[0]);
+      bg.addColorStop(0.6, cols[1]);
+      bg.addColorStop(1,   cols[2]);
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+    }
 
-    // 2) Video cover-fit
+    // 2) Video cover-fit (with transition transform for slide / zoom)
     if (video && video.readyState >= 2 && video.videoWidth && video.videoHeight) {
       const vw = video.videoWidth, vh = video.videoHeight;
       const sr = vw / vh, dr = W / H;
       let sx, sy, sw, sh;
       if (sr > dr) { sh = vh; sw = vh * dr; sx = (vw - sw) / 2; sy = 0; }
       else         { sw = vw; sh = vw / dr; sx = 0; sy = (vh - sh) / 2; }
-      try { ctx.drawImage(video, sx, sy, sw, sh, 0, 0, W, H); } catch {}
+
+      let dx = 0, dy = 0, dw = W, dh = H, alpha = 1;
+      if (trans.type === "slide" && trans.phase !== "none") {
+        const sign = trans.phase === "out" ? -1 : +1;
+        dx = sign * trans.p * W;
+      } else if (trans.type === "zoom" && trans.phase !== "none") {
+        const scale = 1 + trans.p * 0.25;
+        dw = W * scale; dh = H * scale;
+        dx = (W - dw) / 2; dy = (H - dh) / 2;
+        alpha = 1 - trans.p * 0.85;
+      }
+
+      const prevAlpha = ctx.globalAlpha;
+      if (alpha < 1) ctx.globalAlpha = alpha;
+      try { ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh); } catch {}
+      ctx.globalAlpha = prevAlpha;
     }
 
-    // 3) Bottom dim gradient for legibility
+    const F = state.fine;
+
+    // 3) Bottom dim gradient for legibility (configurable opacity)
     const og = ctx.createLinearGradient(0, H * 0.35, 0, H);
     og.addColorStop(0, "rgba(0,0,0,0)");
-    og.addColorStop(1, "rgba(0,0,0,0.6)");
+    og.addColorStop(1, `rgba(0,0,0,${F.dimAmount})`);
     ctx.fillStyle = og;
     ctx.fillRect(0, 0, W, H);
 
-    // 4) Text stack (offer / deadline / CTA pill)
-    const cx = W / 2;
-    const cy = H / 2;
+    // 4) Text stack (offer / deadline / CTA pill) — honors fine controls
+    const cx   = W / 2;
     const base = Math.min(W, H);
+    // Vertical anchor based on text position
+    const cy =
+      F.textPos === "top"    ? H * 0.22 :
+      F.textPos === "bottom" ? H * 0.78 :
+                               H * 0.50;
 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#fff";
-    ctx.shadowColor   = "rgba(0,0,0,0.55)";
-    ctx.shadowBlur    = base * 0.025;
-    ctx.shadowOffsetY = base * 0.006;
+    ctx.fillStyle = F.textColor;
+    if (F.shadow === "none") {
+      ctx.shadowColor = "rgba(0,0,0,0)"; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    } else {
+      const strong = F.shadow === "strong";
+      ctx.shadowColor   = strong ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.4)";
+      ctx.shadowBlur    = base * (strong ? 0.025 : 0.015);
+      ctx.shadowOffsetY = base * (strong ? 0.006 : 0.003);
+    }
 
-    // Headline (offer)
-    const hSize = Math.round(base * 0.105);
-    ctx.font = `900 ${hSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
-    ctx.fillText(state.headline || "", cx, cy - hSize * 0.45);
+    const sc    = F.textScale;
+    const hSize = Math.round(base * 0.105 * sc);
+    const sSize = Math.round(base * 0.045 * sc);
+    const cSize = Math.round(base * 0.038 * sc);
 
-    // Subline (deadline)
-    const sSize = Math.round(base * 0.045);
-    ctx.font = `600 ${sSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
-    ctx.fillText(state.subline || "", cx, cy + hSize * 0.35);
+    if (F.showHeadline) {
+      ctx.font = `900 ${hSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
+      ctx.fillText(state.headline || "", cx, cy - hSize * 0.45);
+    }
+    if (F.showSubline) {
+      ctx.font = `600 ${sSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
+      ctx.fillText(state.subline || "", cx, cy + hSize * 0.35);
+    }
 
     ctx.shadowBlur = 0;
     ctx.shadowOffsetY = 0;
 
-    // CTA pill
-    const cSize  = Math.round(base * 0.038);
-    ctx.font = `800 ${cSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
-    const cText  = state.cta || "";
-    const tw     = ctx.measureText(cText).width;
-    const padX   = cSize * 1.4;
-    const padY   = cSize * 0.7;
-    const pillW  = tw + padX * 2;
-    const pillH  = cSize + padY * 2;
-    const pillX  = cx - pillW / 2;
-    const pillY  = cy + hSize * 0.95;
-    const r      = pillH / 2;
-    ctx.fillStyle = "#fff";
-    ctx.beginPath();
-    ctx.moveTo(pillX + r, pillY);
-    ctx.arcTo(pillX + pillW, pillY, pillX + pillW, pillY + r, r);
-    ctx.arcTo(pillX + pillW, pillY + pillH, pillX + pillW - r, pillY + pillH, r);
-    ctx.arcTo(pillX, pillY + pillH, pillX, pillY + pillH - r, r);
-    ctx.arcTo(pillX, pillY, pillX + r, pillY, r);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#0e1218";
-    ctx.fillText(cText, cx, pillY + pillH / 2 + cSize * 0.05);
+    if (F.showCta) {
+      ctx.font = `800 ${cSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
+      const cText  = state.cta || "";
+      const tw     = ctx.measureText(cText).width;
+      const padX   = cSize * 1.4;
+      const padY   = cSize * 0.7;
+      const pillW  = tw + padX * 2;
+      const pillH  = cSize + padY * 2;
+      const pillX  = cx - pillW / 2;
+      const pillY  = cy + hSize * 0.95;
+      const r      = pillH / 2;
+      ctx.fillStyle = F.ctaBg;
+      ctx.beginPath();
+      ctx.moveTo(pillX + r, pillY);
+      ctx.arcTo(pillX + pillW, pillY, pillX + pillW, pillY + r, r);
+      ctx.arcTo(pillX + pillW, pillY + pillH, pillX + pillW - r, pillY + pillH, r);
+      ctx.arcTo(pillX, pillY + pillH, pillX, pillY + pillH - r, r);
+      ctx.arcTo(pillX, pillY, pillX + r, pillY, r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = F.ctaColor;
+      ctx.fillText(cText, cx, pillY + pillH / 2 + cSize * 0.05);
+    }
 
     // 5) Progress bar at bottom
     const barH = Math.max(3, Math.round(H * 0.005));
@@ -850,6 +1172,12 @@
     pg.addColorStop(1, "#6f5cff");
     ctx.fillStyle = pg;
     ctx.fillRect(0, H - barH, W * Math.max(0, Math.min(1, progress)), barH);
+
+    // 6) Final fade-through-black overlay (only for "fade" transition)
+    if (trans.type === "fade" && trans.phase !== "none" && trans.p > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${trans.p})`;
+      ctx.fillRect(0, 0, W, H);
+    }
   }
 
   async function encodeOne(W, H, label, onProgress) {
@@ -916,7 +1244,24 @@
         const local = c ? Math.max(0, srcVideo.currentTime - c.in) : 0;
         const used  = c ? Math.min(local, c.out - c.in) : 0;
         const ratio = totalSec ? (elapsed + used) / totalSec : 0;
-        drawExportFrame(ctx, srcVideo, W, H, ratio);
+
+        // Compute transition phase for this frame
+        const trans = { type: state.fine.transition || "cut", phase: "none", p: 0 };
+        if (c && trans.type !== "cut") {
+          const cLen = c.out - c.in;
+          if (cLen > TRANSITION_DUR * 2.2) {
+            const remaining = cLen - local;
+            if (i < clips.length - 1 && remaining < TRANSITION_DUR) {
+              trans.phase = "out";
+              trans.p = Math.max(0, Math.min(1, 1 - (remaining / TRANSITION_DUR)));
+            } else if (i > 0 && local < TRANSITION_DUR) {
+              trans.phase = "in";
+              trans.p = Math.max(0, Math.min(1, 1 - (local / TRANSITION_DUR)));
+            }
+          }
+        }
+
+        drawExportFrame(ctx, srcVideo, W, H, ratio, trans);
         raf = requestAnimationFrame(drawLoop);
       };
 
@@ -1032,6 +1377,7 @@
   // ---------- Reset to defaults ----------
   $("#resetBtn").addEventListener("click", () => {
     Object.assign(state, JSON.parse(JSON.stringify(defaults)));
+    bgImageEl = null;
     fieldMap.headline.value = state.headline;
     fieldMap.subline.value  = state.subline;
     fieldMap.cta.value      = state.cta;
@@ -1042,6 +1388,9 @@
     $$('.chk input[type="checkbox"]').forEach((cb) => {
       cb.checked = state.enabledSizes[cb.dataset.size];
     });
+    renderTemplateGallery();
+    syncTuneInputs();
+    applyFine();
     render();
     toast("初期状態にリセットしました");
   });
@@ -1085,6 +1434,9 @@
   if (!SR) showHintNoSupport();
   renderTemplateGallery();
   renderBgmList();
+  bindTuneControls();
+  syncTuneInputs();
+  applyFine();
   updateTotalMeta();
   render();
 })();

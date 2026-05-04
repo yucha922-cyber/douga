@@ -230,6 +230,86 @@
               </p>
             </div>
           </details>
+          <details class="lib-folder" id="folderTune" open>
+            <summary>
+              <span class="folder-icon">✏️</span>
+              <span class="folder-name">詳細編集 (微調整)</span>
+              <span class="folder-count" id="libCntTune">10 項目</span>
+            </summary>
+            <div class="lib-folder-body tune-grid">
+              <div class="tune-row">
+                <label class="tune-label">総尺</label>
+                <div class="tune-pills" id="tuneDurPills">
+                  <button type="button" class="tune-pill" data-dur="6">6s</button>
+                  <button type="button" class="tune-pill" data-dur="10">10s</button>
+                  <button type="button" class="tune-pill active" data-dur="15">15s</button>
+                  <button type="button" class="tune-pill" data-dur="20">20s</button>
+                  <button type="button" class="tune-pill" data-dur="30">30s</button>
+                </div>
+              </div>
+              <div class="tune-row">
+                <label class="tune-label">テキスト位置</label>
+                <div class="tune-pills" id="tunePosPills">
+                  <button type="button" class="tune-pill" data-tpos="top">上</button>
+                  <button type="button" class="tune-pill active" data-tpos="center">中央</button>
+                  <button type="button" class="tune-pill" data-tpos="bottom">下</button>
+                </div>
+              </div>
+              <div class="tune-row">
+                <label class="tune-label">テキストサイズ</label>
+                <input type="range" id="tuneScale" min="0.7" max="1.4" step="0.05" value="1" />
+                <span class="tune-val" id="tuneScaleVal">×1.00</span>
+              </div>
+              <div class="tune-row">
+                <label class="tune-label">背景の暗さ</label>
+                <input type="range" id="tuneDim" min="0" max="0.85" step="0.05" value="0.55" />
+                <span class="tune-val" id="tuneDimVal">55%</span>
+              </div>
+              <div class="tune-row">
+                <label class="tune-label">テキスト色</label>
+                <input type="color" id="tuneTextColor" value="#ffffff" />
+                <span class="tune-val" id="tuneTextColorVal">#FFFFFF</span>
+              </div>
+              <div class="tune-row">
+                <label class="tune-label">CTA 背景</label>
+                <input type="color" id="tuneCtaBg" value="#ffffff" />
+                <span class="tune-val" id="tuneCtaBgVal">#FFFFFF</span>
+              </div>
+              <div class="tune-row">
+                <label class="tune-label">CTA 文字色</label>
+                <input type="color" id="tuneCtaColor" value="#0e1218" />
+                <span class="tune-val" id="tuneCtaColorVal">#0E1218</span>
+              </div>
+              <div class="tune-row">
+                <label class="tune-label">テキスト影</label>
+                <div class="tune-pills" id="tuneShadowPills">
+                  <button type="button" class="tune-pill" data-shadow="none">なし</button>
+                  <button type="button" class="tune-pill" data-shadow="soft">弱</button>
+                  <button type="button" class="tune-pill active" data-shadow="strong">強</button>
+                </div>
+              </div>
+              <div class="tune-row">
+                <label class="tune-label">クリップ間エフェクト</label>
+                <div class="tune-pills" id="tuneTransPills">
+                  <button type="button" class="tune-pill" data-trans="cut">カット</button>
+                  <button type="button" class="tune-pill active" data-trans="fade">フェード</button>
+                  <button type="button" class="tune-pill" data-trans="slide">スライド</button>
+                  <button type="button" class="tune-pill" data-trans="zoom">ズーム</button>
+                </div>
+              </div>
+              <div class="tune-row">
+                <label class="tune-label">表示要素</label>
+                <div class="tune-checks">
+                  <label><input type="checkbox" id="tuneShowH" checked /> 見出し</label>
+                  <label><input type="checkbox" id="tuneShowS" checked /> 期限</label>
+                  <label><input type="checkbox" id="tuneShowC" checked /> CTA</label>
+                </div>
+              </div>
+              <div class="tune-actions">
+                <button type="button" class="btn btn-ghost btn-sm" id="tuneReset">↺ 詳細編集をリセット</button>
+              </div>
+            </div>
+          </details>
         </section>
 
         <div class="size-toolbar">
@@ -245,6 +325,7 @@
             <header><span class="size-label">1:1</span><span class="size-meta">1080×1080 / 15s</span></header>
             <div class="ad-frame ratio-1-1">
               <div class="ad-bg"></div>
+              <img class="ad-bg-image" alt="" />
               <video class="ad-video" muted playsinline preload="auto"></video>
               <div class="ad-overlay"></div>
               <div class="ad-stack">
@@ -259,6 +340,7 @@
             <header><span class="size-label">9:16</span><span class="size-meta">1080×1920 / 15s</span></header>
             <div class="ad-frame ratio-9-16">
               <div class="ad-bg"></div>
+              <img class="ad-bg-image" alt="" />
               <video class="ad-video" muted playsinline preload="auto"></video>
               <div class="ad-overlay"></div>
               <div class="ad-stack">
