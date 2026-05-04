@@ -55,11 +55,46 @@
   };
 
   // ---------- User-uploaded template images ----------
-  /** @type {{id:string,label:string,url:string}[]} */
+  /** @type {{id:string,label:string,url:string,headline:string,subline:string,cta:string}[]} */
   const userTemplates = [];
   let tplIdSeq = 0;
   /** @type {HTMLImageElement|null} preloaded for canvas export */
   let bgImageEl = null;
+
+  // Per-template overrides for offer/deadline/CTA. Keys: built-in like "ec",
+  // user templates like "user-usr-1". Only changed fields are stored.
+  /** @type {Record<string, {headline?:string, subline?:string, cta?:string}>} */
+  const templateOverrides = {};
+
+  function templateBaseFor(key) {
+    if (templates[key]) return templates[key];
+    if (typeof key === "string" && key.startsWith("user-")) {
+      const uid = key.slice(5);
+      return userTemplates.find((x) => x.id === uid) || null;
+    }
+    return null;
+  }
+  function effectiveTemplate(key) {
+    const base = templateBaseFor(key);
+    if (!base) return null;
+    const ov = templateOverrides[key] || {};
+    return {
+      label:    base.label || key,
+      headline: ov.headline ?? base.headline ?? "",
+      subline:  ov.subline  ?? base.subline  ?? "",
+      cta:      ov.cta      ?? base.cta      ?? "",
+      palette:  base.palette,
+    };
+  }
+  function hasOverride(key) {
+    const o = templateOverrides[key];
+    return !!(o && (o.headline != null || o.subline != null || o.cta != null));
+  }
+  function updateTplResetVisibility() {
+    const btn = $("#tplTextReset");
+    if (!btn) return;
+    btn.hidden = !hasOverride(state.template);
+  }
 
   // ---------- Render ----------
   function render() {
@@ -99,6 +134,16 @@
   Object.entries(fieldMap).forEach(([key, el]) => {
     el.addEventListener("input", () => {
       state[key] = el.value;
+      // Save edit into the active template's override map so each template
+      // remembers its own offer / deadline / CTA across switching.
+      const tk = state.template;
+      if (tk && templateBaseFor(tk)) {
+        if (!templateOverrides[tk]) templateOverrides[tk] = {};
+        templateOverrides[tk][key] = el.value;
+        // Re-render gallery so tile previews show the updated text.
+        if (typeof renderTemplateGallery === "function") renderTemplateGallery();
+        if (typeof updateTplResetVisibility === "function") updateTplResetVisibility();
+      }
       render();
     });
   });
@@ -680,19 +725,20 @@
     grid.innerHTML = "";
 
     // 1) Built-in templates (palette-based)
-    Object.entries(templates).forEach(([key, t]) => {
+    Object.keys(templates).forEach((key) => {
+      const eff = effectiveTemplate(key);
+      const isActive = state.template === key && !state.bgImage;
       const tile = document.createElement("button");
       tile.type = "button";
-      const isActive = state.template === key && !state.bgImage;
       tile.className = "lib-tile lib-tile-tpl" + (isActive ? " selected" : "");
       tile.dataset.tpl = key;
       tile.innerHTML = `
-        <div class="tpl-prev" style="background:${templatePreviewCSS(t.palette)}">
-          <div class="tpl-prev-h">${t.headline}</div>
-          <div class="tpl-prev-s">${t.subline}</div>
-          <div class="tpl-prev-c">${t.cta}</div>
+        <div class="tpl-prev" style="background:${templatePreviewCSS(eff.palette)}">
+          <div class="tpl-prev-h">${eff.headline}</div>
+          <div class="tpl-prev-s">${eff.subline}</div>
+          <div class="tpl-prev-c">${eff.cta}</div>
         </div>
-        <div class="tpl-tile-name">${t.label || key}</div>
+        <div class="tpl-tile-name">${eff.label}${hasOverride(key) ? ' <span class="tpl-edited">·編集済</span>' : ""}</div>
       `;
       tile.addEventListener("click", () => applyTemplate(key));
       grid.appendChild(tile);
@@ -700,19 +746,21 @@
 
     // 2) User-uploaded templates
     userTemplates.forEach((u) => {
+      const key = `user-${u.id}`;
+      const eff = effectiveTemplate(key);
+      const isActive = state.bgImage && state.bgImage.id === u.id;
       const tile = document.createElement("button");
       tile.type = "button";
-      const isActive = state.bgImage && state.bgImage.id === u.id;
       tile.className = "lib-tile lib-tile-tpl lib-tile-tpl-user" + (isActive ? " selected" : "");
       tile.dataset.userTpl = u.id;
       tile.innerHTML = `
         <div class="tpl-prev" style="background-image:url('${u.url}')">
           <div class="tpl-prev-dim"></div>
-          <div class="tpl-prev-h">${state.headline || ""}</div>
-          <div class="tpl-prev-s">${state.subline || ""}</div>
-          <div class="tpl-prev-c">${state.cta || ""}</div>
+          <div class="tpl-prev-h">${eff.headline}</div>
+          <div class="tpl-prev-s">${eff.subline}</div>
+          <div class="tpl-prev-c">${eff.cta}</div>
         </div>
-        <div class="tpl-tile-name" title="${u.label}">${u.label}</div>
+        <div class="tpl-tile-name" title="${u.label}">${u.label}${hasOverride(key) ? ' <span class="tpl-edited">·編集済</span>' : ""}</div>
         <button class="tpl-del" data-tpl-del="${u.id}" type="button" title="削除">×</button>
       `;
       tile.addEventListener("click", (e) => {
@@ -741,7 +789,7 @@
   }
 
   function applyTemplate(key) {
-    const t = templates[key];
+    const t = effectiveTemplate(key);
     if (!t) return;
     state.template = key;
     state.bgImage  = null;
@@ -749,7 +797,7 @@
     state.headline = t.headline;
     state.subline  = t.subline;
     state.cta      = t.cta;
-    state.palette  = t.palette;
+    if (t.palette) state.palette = t.palette;
     fieldMap.headline.value = state.headline;
     fieldMap.subline.value  = state.subline;
     fieldMap.cta.value      = state.cta;
@@ -757,14 +805,25 @@
     $$(".tpl-chip[data-tpl]").forEach((x) => x.classList.toggle("active", x.dataset.tpl === key));
     renderTemplateGallery();
     render();
+    updateTplResetVisibility();
     toast(`テンプレ「${t.label || key}」を適用しました`);
   }
 
   function applyUserTemplate(id) {
     const u = userTemplates.find((x) => x.id === id);
     if (!u) return;
+    const key = `user-${id}`;
+    const eff = effectiveTemplate(key);
     state.bgImage = { id: u.id, url: u.url, name: u.label };
-    state.template = `user-${id}`;
+    state.template = key;
+    if (eff) {
+      state.headline = eff.headline;
+      state.subline  = eff.subline;
+      state.cta      = eff.cta;
+      fieldMap.headline.value = state.headline;
+      fieldMap.subline.value  = state.subline;
+      fieldMap.cta.value      = state.cta;
+    }
     // Preload for canvas export
     bgImageEl = new Image();
     bgImageEl.crossOrigin = "anonymous";
@@ -773,6 +832,7 @@
     $$(".tpl-chip[data-tpl]").forEach((x) => x.classList.remove("active"));
     renderTemplateGallery();
     render();
+    updateTplResetVisibility();
     toast(`画像テンプレ「${u.label}」を適用しました`);
   }
 
@@ -791,7 +851,13 @@
       const id    = `usr-${++tplIdSeq}`;
       const url   = URL.createObjectURL(f);
       const label = f.name.replace(/\.[^.]+$/, "");
-      userTemplates.push({ id, label, url });
+      // Capture current text as the user-template's defaults
+      userTemplates.push({
+        id, label, url,
+        headline: state.headline,
+        subline:  state.subline,
+        cta:      state.cta,
+      });
       lastId = id;
     });
     renderTemplateGallery();
@@ -1376,9 +1442,25 @@
   }
 
   // ---------- Reset to defaults ----------
+  // Reset just the active template's text overrides
+  const tplTextResetBtn = $("#tplTextReset");
+  if (tplTextResetBtn) {
+    tplTextResetBtn.addEventListener("click", () => {
+      const tk = state.template;
+      if (!tk || !templateOverrides[tk]) return;
+      delete templateOverrides[tk];
+      // Re-apply the template (built-in or user) to refresh fields
+      if (templates[tk]) applyTemplate(tk);
+      else if (typeof tk === "string" && tk.startsWith("user-")) applyUserTemplate(tk.slice(5));
+      toast("このテンプレの文言を初期値に戻しました");
+    });
+  }
+
   $("#resetBtn").addEventListener("click", () => {
     Object.assign(state, JSON.parse(JSON.stringify(defaults)));
     bgImageEl = null;
+    // Clear all per-template text overrides
+    Object.keys(templateOverrides).forEach((k) => delete templateOverrides[k]);
     fieldMap.headline.value = state.headline;
     fieldMap.subline.value  = state.subline;
     fieldMap.cta.value      = state.cta;
@@ -1392,6 +1474,7 @@
     renderTemplateGallery();
     syncTuneInputs();
     applyFine();
+    updateTplResetVisibility();
     render();
     toast("初期状態にリセットしました");
   });
@@ -1438,6 +1521,7 @@
   bindTuneControls();
   syncTuneInputs();
   applyFine();
+  updateTplResetVisibility();
   updateTotalMeta();
   render();
 })();
