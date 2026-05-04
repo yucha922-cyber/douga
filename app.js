@@ -13,10 +13,12 @@
     ctaBg:       "#ffffff",
     ctaColor:    "#0e1218",
     shadow:      "strong",   // "none" | "soft" | "strong"
+    transition:  "fade",     // "cut" | "fade" | "slide" | "zoom"
     showHeadline:true,
     showSubline: true,
     showCta:     true,
   };
+  const TRANSITION_DUR = 0.22; // seconds per outgoing/incoming half
   const defaults = {
     headline: "30% OFF",
     subline:  "5/31 (土) まで",
@@ -475,13 +477,34 @@
   });
 
   // ---------- Stitched playback (sync across both size cards) ----------
-  let playState = null; // { idx, clip, raf, onTime }
+  let playState = null; // { idx, clip, raf, onTime, transTimers:[] }
+
+  function clearTransitionFx() {
+    $$(".ad-frame").forEach((f) => {
+      f.classList.remove("is-transitioning", "trans-fade", "trans-slide", "trans-zoom");
+    });
+  }
+
+  function triggerLivePreviewTransition(type) {
+    if (type === "cut") return;
+    $$(".ad-frame").forEach((f) => {
+      f.classList.remove("trans-fade", "trans-slide", "trans-zoom");
+      // Force reflow so the animation restarts each time
+      void f.offsetWidth;
+      f.classList.add("is-transitioning", `trans-${type}`);
+    });
+    return setTimeout(clearTransitionFx, TRANSITION_DUR * 2 * 1000 + 60);
+  }
 
   function stopStitched() {
     if (playState && playState.onTime) {
       adVideos.forEach((v) => v.removeEventListener("timeupdate", playState.onTime));
     }
+    if (playState && playState.transTimers) {
+      playState.transTimers.forEach((t) => clearTimeout(t));
+    }
     adVideos.forEach((v) => { try { v.pause(); } catch {} });
+    clearTransitionFx();
     playState = null;
     setProgress(0);
     stopBgm && stopBgm();
@@ -502,6 +525,20 @@
     const grandTotal = totals.reduce((a, b) => a + b, 0);
     let cumPrev = 0;
     let i = 0;
+    const transTimers = [];
+
+    const scheduleTransitionForClip = (idx) => {
+      const type = state.fine.transition || "cut";
+      if (type === "cut") return;
+      if (idx >= seq.length - 1) return;
+      const c    = seq[idx];
+      const cLen = Math.max(0, c.out - c.in);
+      // Only schedule when there's room for both halves of the transition
+      if (cLen < TRANSITION_DUR * 2.2) return;
+      const triggerInMs = (cLen - TRANSITION_DUR) * 1000;
+      const t = setTimeout(() => triggerLivePreviewTransition(type), triggerInMs);
+      transTimers.push(t);
+    };
 
     const playClip = (idx) => {
       const c = seq[idx];
@@ -514,6 +551,7 @@
         if (v.readyState >= 2) playWhenReady();
         else v.addEventListener("loadeddata", playWhenReady, { once: true });
       });
+      scheduleTransitionForClip(idx);
     };
 
     const onTime = () => {
@@ -540,7 +578,7 @@
       }
     };
 
-    playState = { idx: 0, onTime };
+    playState = { idx: 0, onTime, transTimers };
     adVideos.forEach((v) => v.addEventListener("timeupdate", onTime));
     playClip(0);
     playBgm && playBgm();
@@ -828,6 +866,7 @@
     $$("#tuneDurPills [data-dur]").forEach((b) => b.classList.toggle("active", Number(b.dataset.dur) === f.duration));
     $$("#tunePosPills [data-tpos]").forEach((b) => b.classList.toggle("active", b.dataset.tpos === f.textPos));
     $$("#tuneShadowPills [data-shadow]").forEach((b) => b.classList.toggle("active", b.dataset.shadow === f.shadow));
+    $$("#tuneTransPills [data-trans]").forEach((b) => b.classList.toggle("active", b.dataset.trans === f.transition));
   }
 
   function bindTuneControls() {
@@ -853,6 +892,14 @@
         state.fine.shadow = b.dataset.shadow;
         setActive("#tuneShadowPills [data-shadow]", b);
         applyFine();
+      });
+    });
+    $$("#tuneTransPills [data-trans]").forEach((b) => {
+      b.addEventListener("click", () => {
+        state.fine.transition = b.dataset.trans;
+        setActive("#tuneTransPills [data-trans]", b);
+        applyFine();
+        if (clips.length > 1) toast(`クリップ間エフェクトを「${b.textContent.trim()}」に変更しました`);
       });
     });
     const onScale = () => {
@@ -999,7 +1046,8 @@
     return map[name] || map.sunset;
   }
 
-  function drawExportFrame(ctx, video, W, H, progress) {
+  function drawExportFrame(ctx, video, W, H, progress, trans) {
+    trans = trans || { type: "cut", phase: "none", p: 0 };
     // 1) Background — user template image if available, else palette gradient
     if (bgImageEl && bgImageEl.complete && bgImageEl.naturalWidth) {
       const iw = bgImageEl.naturalWidth, ih = bgImageEl.naturalHeight;
@@ -1019,14 +1067,29 @@
       ctx.fillRect(0, 0, W, H);
     }
 
-    // 2) Video cover-fit
+    // 2) Video cover-fit (with transition transform for slide / zoom)
     if (video && video.readyState >= 2 && video.videoWidth && video.videoHeight) {
       const vw = video.videoWidth, vh = video.videoHeight;
       const sr = vw / vh, dr = W / H;
       let sx, sy, sw, sh;
       if (sr > dr) { sh = vh; sw = vh * dr; sx = (vw - sw) / 2; sy = 0; }
       else         { sw = vw; sh = vw / dr; sx = 0; sy = (vh - sh) / 2; }
-      try { ctx.drawImage(video, sx, sy, sw, sh, 0, 0, W, H); } catch {}
+
+      let dx = 0, dy = 0, dw = W, dh = H, alpha = 1;
+      if (trans.type === "slide" && trans.phase !== "none") {
+        const sign = trans.phase === "out" ? -1 : +1;
+        dx = sign * trans.p * W;
+      } else if (trans.type === "zoom" && trans.phase !== "none") {
+        const scale = 1 + trans.p * 0.25;
+        dw = W * scale; dh = H * scale;
+        dx = (W - dw) / 2; dy = (H - dh) / 2;
+        alpha = 1 - trans.p * 0.85;
+      }
+
+      const prevAlpha = ctx.globalAlpha;
+      if (alpha < 1) ctx.globalAlpha = alpha;
+      try { ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh); } catch {}
+      ctx.globalAlpha = prevAlpha;
     }
 
     const F = state.fine;
@@ -1109,6 +1172,12 @@
     pg.addColorStop(1, "#6f5cff");
     ctx.fillStyle = pg;
     ctx.fillRect(0, H - barH, W * Math.max(0, Math.min(1, progress)), barH);
+
+    // 6) Final fade-through-black overlay (only for "fade" transition)
+    if (trans.type === "fade" && trans.phase !== "none" && trans.p > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${trans.p})`;
+      ctx.fillRect(0, 0, W, H);
+    }
   }
 
   async function encodeOne(W, H, label, onProgress) {
@@ -1175,7 +1244,24 @@
         const local = c ? Math.max(0, srcVideo.currentTime - c.in) : 0;
         const used  = c ? Math.min(local, c.out - c.in) : 0;
         const ratio = totalSec ? (elapsed + used) / totalSec : 0;
-        drawExportFrame(ctx, srcVideo, W, H, ratio);
+
+        // Compute transition phase for this frame
+        const trans = { type: state.fine.transition || "cut", phase: "none", p: 0 };
+        if (c && trans.type !== "cut") {
+          const cLen = c.out - c.in;
+          if (cLen > TRANSITION_DUR * 2.2) {
+            const remaining = cLen - local;
+            if (i < clips.length - 1 && remaining < TRANSITION_DUR) {
+              trans.phase = "out";
+              trans.p = Math.max(0, Math.min(1, 1 - (remaining / TRANSITION_DUR)));
+            } else if (i > 0 && local < TRANSITION_DUR) {
+              trans.phase = "in";
+              trans.p = Math.max(0, Math.min(1, 1 - (local / TRANSITION_DUR)));
+            }
+          }
+        }
+
+        drawExportFrame(ctx, srcVideo, W, H, ratio, trans);
         raf = requestAnimationFrame(drawLoop);
       };
 
