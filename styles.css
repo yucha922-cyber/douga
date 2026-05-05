@@ -624,7 +624,7 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
 }
 .ad-bg-image {
   position: absolute; inset: 0; width: 100%; height: 100%;
-  object-fit: cover; z-index: 0; display: none;
+  object-fit: cover; z-index: 10; display: none;   /* always frontmost */
   pointer-events: none;
 }
 .ad-video {
@@ -636,6 +636,12 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
 }
 .ad-video.active { opacity: 1; }
 .ad-video:not([src]) { display: none; }
+
+/* "クロスディゾルブ" mode: smooth opacity crossfade triggered by .active swap.
+   Other modes (cut / fade / slide / zoom) keep their existing keyframe-based animations. */
+.ad-frame[data-trans="dissolve"] .ad-video {
+  transition: opacity 0.22s ease;
+}
 
 /* Inter-clip transition effects (live preview) */
 .ad-frame.is-transitioning .ad-video { will-change: transform, opacity; }

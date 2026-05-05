@@ -18,7 +18,7 @@
     ctaBg:       "#ffffff",
     ctaColor:    "#0e1218",
     shadow:      "strong",   // "none" | "soft" | "strong"
-    transition:  "fade",     // "cut" | "fade" | "slide" | "zoom"
+    transition:  "dissolve", // "cut" | "dissolve" | "fade" | "slide" | "zoom"
     showHeadline:true,
     showSubline: true,
     showCta:     true,
@@ -628,7 +628,8 @@
 
     const scheduleTransitionForClip = (idx) => {
       const type = state.fine.transition || "cut";
-      if (type === "cut") return;
+      // "cut" = no animation; "dissolve" relies on CSS opacity transition driven by .active swap
+      if (type === "cut" || type === "dissolve") return;
       if (idx >= seq.length - 1) return;
       const cLen = Math.max(0, seq[idx].out - seq[idx].in);
       if (cLen < TRANSITION_DUR * 2.2) return;
@@ -673,10 +674,21 @@
             if (nv.readyState >= 2) playNow();
             else nv.addEventListener("loadeddata", playNow, { once: true });
           });
-          // Pause and rewind the (now back) old buffer to its in-point
-          back().forEach((ov) => { try { ov.pause(); } catch {} });
-          // Preload seq[i+1] into the new back buffer
-          if (seq[i + 1]) loadInto(back(), seq[i + 1], false);
+          // For "dissolve": keep the old buffer playing during the 0.22s opacity
+          // crossfade so frames from both clips overlap smoothly.
+          // Otherwise (cut / fade / slide / zoom): pause and preload immediately.
+          const oldBackVids = back().slice();
+          const isDissolve  = (state.fine.transition === "dissolve");
+          if (isDissolve) {
+            const t = setTimeout(() => {
+              oldBackVids.forEach((ov) => { try { ov.pause(); } catch {} });
+              if (seq[i + 1]) loadInto(back(), seq[i + 1], false);
+            }, TRANSITION_DUR * 1000);
+            transTimers.push(t);
+          } else {
+            oldBackVids.forEach((ov) => { try { ov.pause(); } catch {} });
+            if (seq[i + 1]) loadInto(back(), seq[i + 1], false);
+          }
           scheduleTransitionForClip(i);
         }
       }
@@ -1002,6 +1014,7 @@
       f.style.setProperty("--cta-bg",     String(F.ctaBg));
       f.style.setProperty("--cta-color",  String(F.ctaColor));
       f.dataset.shadow = F.shadow;
+      f.dataset.trans  = F.transition;
     });
     $$(".size-card").forEach((card) => {
       const stack = card.querySelector(".ad-stack");
@@ -1234,18 +1247,11 @@
     return map[name] || map.sunset;
   }
 
-  function drawExportFrame(ctx, video, W, H, progress, trans) {
+  function drawExportFrame(ctx, video, W, H, progress, trans, backVideo) {
     trans = trans || { type: "cut", phase: "none", p: 0 };
-    // 1) Background — user template image if available, else palette gradient
-    if (bgImageEl && bgImageEl.complete && bgImageEl.naturalWidth) {
-      const iw = bgImageEl.naturalWidth, ih = bgImageEl.naturalHeight;
-      const sr = iw / ih, dr = W / H;
-      let sx, sy, sw, sh;
-      if (sr > dr) { sh = ih; sw = ih * dr; sx = (iw - sw) / 2; sy = 0; }
-      else         { sw = iw; sh = iw / dr; sx = 0; sy = (ih - sh) / 2; }
-      try { ctx.drawImage(bgImageEl, sx, sy, sw, sh, 0, 0, W, H); }
-      catch { ctx.fillStyle = "#0a0e15"; ctx.fillRect(0, 0, W, H); }
-    } else {
+    // 1) Background gradient — always rendered so transparent / partial templates
+    //    don't reveal raw black canvas. Template image is drawn LAST (frontmost).
+    {
       const cols = paletteBaseColors(state.palette);
       const bg = ctx.createLinearGradient(0, 0, W, H);
       bg.addColorStop(0,   cols[0]);
@@ -1277,6 +1283,22 @@
       const prevAlpha = ctx.globalAlpha;
       if (alpha < 1) ctx.globalAlpha = alpha;
       try { ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh); } catch {}
+      ctx.globalAlpha = prevAlpha;
+    }
+
+    // 2b) Cross dissolve overlay: during "in" phase of dissolve, the previous
+    //     clip (backVideo) keeps playing and is drawn on top of the new front
+    //     with alpha = trans.p (1 → 0), producing a smooth A→B blend with no black.
+    if (trans.type === "dissolve" && trans.phase === "in" && backVideo &&
+        backVideo.readyState >= 2 && backVideo.videoWidth && backVideo.videoHeight) {
+      const bvw = backVideo.videoWidth, bvh = backVideo.videoHeight;
+      const sr = bvw / bvh, dr = W / H;
+      let sx, sy, sw, sh;
+      if (sr > dr) { sh = bvh; sw = bvh * dr; sx = (bvw - sw) / 2; sy = 0; }
+      else         { sw = bvw; sh = bvw / dr; sx = 0; sy = (bvh - sh) / 2; }
+      const prevAlpha = ctx.globalAlpha;
+      ctx.globalAlpha = trans.p;
+      try { ctx.drawImage(backVideo, sx, sy, sw, sh, 0, 0, W, H); } catch {}
       ctx.globalAlpha = prevAlpha;
     }
 
@@ -1360,7 +1382,18 @@
     ctx.fillStyle = pg;
     ctx.fillRect(0, H - barH, W * Math.max(0, Math.min(1, progress)), barH);
 
-    // 6) Final fade-through-black overlay (only for "fade" transition)
+    // 6) Template image overlay — drawn LAST so it sits on top of everything
+    //    (banner / frame designs use transparent areas to reveal video / text).
+    if (bgImageEl && bgImageEl.complete && bgImageEl.naturalWidth) {
+      const iw = bgImageEl.naturalWidth, ih = bgImageEl.naturalHeight;
+      const sr = iw / ih, dr = W / H;
+      let sx, sy, sw, sh;
+      if (sr > dr) { sh = ih; sw = ih * dr; sx = (iw - sw) / 2; sy = 0; }
+      else         { sw = iw; sh = iw / dr; sx = 0; sy = (ih - sh) / 2; }
+      try { ctx.drawImage(bgImageEl, sx, sy, sw, sh, 0, 0, W, H); } catch {}
+    }
+
+    // 7) Final fade-through-black overlay (only for "fade" transition)
     if (trans.type === "fade" && trans.phase !== "none" && trans.p > 0) {
       ctx.fillStyle = `rgba(0,0,0,${trans.p})`;
       ctx.fillRect(0, 0, W, H);
@@ -1466,7 +1499,7 @@
           }
         }
 
-        drawExportFrame(ctx, frontSrc, W, H, ratio, trans);
+        drawExportFrame(ctx, frontSrc, W, H, ratio, trans, backSrc);
 
         // Boundary check + dual-buffer swap
         if (c && frontSrc.currentTime >= c.out - 0.04) {
@@ -1478,13 +1511,25 @@
             return;
           }
           // Swap buffers — backSrc was preloaded with clips[i] already
-          const tmp = frontSrc; frontSrc = backSrc; backSrc = tmp;
+          const oldFront = frontSrc;
+          frontSrc = backSrc;
+          backSrc  = oldFront;
           frontSrc.play().catch(() => {});
-          try { backSrc.pause(); } catch {}
-          // Preload clips[i+1] into the new back buffer (if any)
-          if (clips[i + 1]) loadInto(backSrc, clips[i + 1]);
+          // For "dissolve", keep the old front (now back) playing for the
+          // crossfade window so its frames composite under the incoming clip.
+          if (state.fine.transition === "dissolve") {
+            setTimeout(() => {
+              try { oldFront.pause(); } catch {}
+              if (clips[i + 1]) loadInto(oldFront, clips[i + 1]);
+            }, TRANSITION_DUR * 1000);
+          } else {
+            try { oldFront.pause(); } catch {}
+            if (clips[i + 1]) loadInto(oldFront, clips[i + 1]);
+          }
         }
 
+        // Pass backSrc as the previous-clip source so dissolve can overlay it
+        // (drawExportFrame uses it only when trans.type === "dissolve").
         raf = requestAnimationFrame(drawLoop);
       };
 
