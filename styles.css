@@ -636,12 +636,8 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
 }
 .ad-video.active { opacity: 1; }
 .ad-video:not([src]) { display: none; }
-
-/* "クロスディゾルブ" mode: smooth opacity crossfade triggered by .active swap.
-   Other modes (cut / fade / slide / zoom) keep their existing keyframe-based animations. */
-.ad-frame[data-trans="dissolve"] .ad-video {
-  transition: opacity 0.22s ease;
-}
+/* dissolve is driven by JS rAF (inline opacity) — no CSS transition here
+   to avoid double-animation conflicts. */
 
 /* Inter-clip transition effects (live preview) */
 .ad-frame.is-transitioning .ad-video { will-change: transform, opacity; }
@@ -700,6 +696,7 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
   cursor: grab;
   user-select: none;
   touch-action: none;
+  font-family: var(--font-stack, "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif);
 }
 .ad-headline:hover, .ad-subline:hover, .ad-cta:hover {
   outline: 1.5px dashed rgba(0,200,255,.8);
