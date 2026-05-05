@@ -554,13 +554,18 @@
   }
 
   function stopStitched() {
-    if (playState && playState.onTime) {
-      adVideos.forEach((v) => v.removeEventListener("timeupdate", playState.onTime));
-    }
+    if (playState && playState.raf) cancelAnimationFrame(playState.raf);
     if (playState && playState.transTimers) {
       playState.transTimers.forEach((t) => clearTimeout(t));
     }
-    adVideos.forEach((v) => { try { v.pause(); } catch {} });
+    $$(".ad-video").forEach((v) => { try { v.pause(); } catch {} });
+    // Reset buffer A to active, B to inactive (display state for static preview)
+    $$(".size-card").forEach((card) => {
+      const a = card.querySelector(".ad-video-a");
+      const b = card.querySelector(".ad-video-b");
+      if (a) a.classList.add("active");
+      if (b) b.classList.remove("active");
+    });
     clearTransitionFx();
     playState = null;
     setProgress(0);
@@ -574,6 +579,9 @@
     });
   }
 
+  // Dual-buffered stitched playback. Each size card has two <video> elements
+  // (ad-video-a, ad-video-b). While one plays, the other preloads the next clip
+  // so the swap at the boundary is instantaneous (no load gap).
   function playStitched() {
     if (!clips.length) { toast("先にクリップを取り込んでください"); return; }
     stopStitched();
@@ -582,62 +590,101 @@
     const grandTotal = totals.reduce((a, b) => a + b, 0);
     let cumPrev = 0;
     let i = 0;
+    let bufIdx = 0;             // 0 means buffer "a" is front, 1 means "b" is front
     const transTimers = [];
+
+    const pairs = $$(".size-card").map((card) => [
+      card.querySelector(".ad-video-a"),
+      card.querySelector(".ad-video-b"),
+    ]).filter(([a, b]) => a && b);
+
+    const front = () => pairs.map((p) => p[bufIdx]);
+    const back  = () => pairs.map((p) => p[1 - bufIdx]);
+
+    const showFront = () => {
+      pairs.forEach((p) => {
+        p[bufIdx].classList.add("active");
+        p[1 - bufIdx].classList.remove("active");
+      });
+    };
+
+    const loadInto = (videos, c, autoplay) => {
+      videos.forEach((v) => {
+        if (v.src !== c.url) v.src = c.url;
+        const setTime = () => {
+          try { v.currentTime = c.in; } catch {}
+          if (autoplay) v.play().catch(() => {});
+          else { try { v.pause(); } catch {} }
+        };
+        if (v.readyState >= 1) setTime();
+        else v.addEventListener("loadedmetadata", setTime, { once: true });
+        if (autoplay) {
+          const playWhenReady = () => v.play().catch(() => {});
+          if (v.readyState >= 2) playWhenReady();
+          else v.addEventListener("loadeddata", playWhenReady, { once: true });
+        }
+      });
+    };
 
     const scheduleTransitionForClip = (idx) => {
       const type = state.fine.transition || "cut";
       if (type === "cut") return;
       if (idx >= seq.length - 1) return;
-      const c    = seq[idx];
-      const cLen = Math.max(0, c.out - c.in);
-      // Only schedule when there's room for both halves of the transition
+      const cLen = Math.max(0, seq[idx].out - seq[idx].in);
       if (cLen < TRANSITION_DUR * 2.2) return;
-      const triggerInMs = (cLen - TRANSITION_DUR) * 1000;
-      const t = setTimeout(() => triggerLivePreviewTransition(type), triggerInMs);
+      const t = setTimeout(() => triggerLivePreviewTransition(type), (cLen - TRANSITION_DUR) * 1000);
       transTimers.push(t);
     };
 
-    const playClip = (idx) => {
-      const c = seq[idx];
-      adVideos.forEach((v) => {
-        v.src = c.url;
-        const setTime = () => { try { v.currentTime = c.in; } catch {} };
-        if (v.readyState >= 1) setTime();
-        else v.addEventListener("loadedmetadata", setTime, { once: true });
-        const playWhenReady = () => v.play().catch(() => {});
-        if (v.readyState >= 2) playWhenReady();
-        else v.addEventListener("loadeddata", playWhenReady, { once: true });
-      });
-      scheduleTransitionForClip(idx);
-    };
+    // Initial: buffer A = clip 0 (playing), buffer B = clip 1 (preloaded)
+    bufIdx = 0;
+    showFront();
+    pairs.flat().forEach((v) => { try { v.pause(); } catch {} });
+    loadInto(front(), seq[0], true);
+    if (seq[1]) loadInto(back(), seq[1], false);
+    scheduleTransitionForClip(0);
 
-    const onTime = () => {
-      const v = adVideos[0];
-      if (!v) return;
+    const tick = () => {
+      if (!playState) return;
+      const v = front()[0];
       const c = seq[i];
-      const local = Math.max(0, v.currentTime - c.in);
-      const ratio = grandTotal ? (cumPrev + Math.min(local, totals[i])) / grandTotal : 0;
-      setProgress(ratio);
-      // sync the second video
-      if (adVideos[1]) {
-        const drift = Math.abs(adVideos[1].currentTime - v.currentTime);
-        if (drift > 0.2) adVideos[1].currentTime = v.currentTime;
-      }
-      if (v.currentTime >= c.out - 0.05) {
-        cumPrev += totals[i];
-        i++;
-        if (i >= seq.length) {
-          stopStitched();
-          toast("再生終了");
-          return;
+      if (v && c && v.readyState >= 1) {
+        const local = Math.max(0, v.currentTime - c.in);
+        const ratio = grandTotal ? (cumPrev + Math.min(local, totals[i])) / grandTotal : 0;
+        setProgress(ratio);
+        // Keep the second card's front video in sync time-wise
+        if (front()[1]) {
+          const drift = Math.abs(front()[1].currentTime - v.currentTime);
+          if (drift > 0.2) { try { front()[1].currentTime = v.currentTime; } catch {} }
         }
-        playClip(i);
+        if (v.currentTime >= c.out - 0.04) {
+          cumPrev += totals[i];
+          i++;
+          if (i >= seq.length) {
+            stopStitched();
+            toast("再生終了");
+            return;
+          }
+          // Swap buffers: back (already preloaded with seq[i]) becomes front
+          bufIdx = 1 - bufIdx;
+          showFront();
+          front().forEach((nv) => {
+            const playNow = () => nv.play().catch(() => {});
+            if (nv.readyState >= 2) playNow();
+            else nv.addEventListener("loadeddata", playNow, { once: true });
+          });
+          // Pause and rewind the (now back) old buffer to its in-point
+          back().forEach((ov) => { try { ov.pause(); } catch {} });
+          // Preload seq[i+1] into the new back buffer
+          if (seq[i + 1]) loadInto(back(), seq[i + 1], false);
+          scheduleTransitionForClip(i);
+        }
       }
+      playState.raf = requestAnimationFrame(tick);
     };
 
-    playState = { idx: 0, onTime, transTimers };
-    adVideos.forEach((v) => v.addEventListener("timeupdate", onTime));
-    playClip(0);
+    playState = { raf: 0, transTimers, pairs };
+    playState.raf = requestAnimationFrame(tick);
     playBgm && playBgm();
   }
 
@@ -1329,10 +1376,13 @@
     const ctx = canvas.getContext("2d");
     drawExportFrame(ctx, null, W, H, 0); // prime first frame
 
-    const srcVideo = document.createElement("video");
-    srcVideo.muted = true;
-    srcVideo.playsInline = true;
-    srcVideo.preload = "auto";
+    // Two source videos for dual-buffering — eliminates load gap between clips
+    const srcA = document.createElement("video");
+    const srcB = document.createElement("video");
+    [srcA, srcB].forEach((v) => {
+      v.muted = true; v.playsInline = true; v.preload = "auto";
+    });
+    let frontSrc = srcA, backSrc = srcB;
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === "suspended") { try { await audioCtx.resume(); } catch {} }
@@ -1379,9 +1429,24 @@
         resolve(new Blob(chunks, { type: outMime }));
       };
 
+      // Load a clip into a video element and resolve when its first frame is ready.
+      const loadInto = (v, c) => new Promise((res) => {
+        if (v.src !== c.url) v.src = c.url;
+        const ready = () => { try { v.currentTime = c.in; } catch {}; res(); };
+        if (v.readyState >= 1) ready();
+        else v.addEventListener("loadedmetadata", ready, { once: true });
+      });
+
+      const finish = () => {
+        try { frontSrc.pause(); } catch {}
+        try { backSrc.pause(); } catch {}
+        try { bgmNode && bgmNode.stop(); } catch {}
+        try { recorder.state !== "inactive" && recorder.stop(); } catch {}
+      };
+
       const drawLoop = () => {
         const c = clips[i] || clips[clips.length - 1];
-        const local = c ? Math.max(0, srcVideo.currentTime - c.in) : 0;
+        const local = c ? Math.max(0, frontSrc.currentTime - c.in) : 0;
         const used  = c ? Math.min(local, c.out - c.in) : 0;
         const ratio = totalSec ? (elapsed + used) / totalSec : 0;
 
@@ -1401,46 +1466,41 @@
           }
         }
 
-        drawExportFrame(ctx, srcVideo, W, H, ratio, trans);
+        drawExportFrame(ctx, frontSrc, W, H, ratio, trans);
+
+        // Boundary check + dual-buffer swap
+        if (c && frontSrc.currentTime >= c.out - 0.04) {
+          elapsed += (c.out - c.in);
+          onProgress(Math.min(1, elapsed / totalSec), label);
+          i++;
+          if (i >= clips.length) {
+            finish();
+            return;
+          }
+          // Swap buffers — backSrc was preloaded with clips[i] already
+          const tmp = frontSrc; frontSrc = backSrc; backSrc = tmp;
+          frontSrc.play().catch(() => {});
+          try { backSrc.pause(); } catch {}
+          // Preload clips[i+1] into the new back buffer (if any)
+          if (clips[i + 1]) loadInto(backSrc, clips[i + 1]);
+        }
+
         raf = requestAnimationFrame(drawLoop);
       };
 
-      const finish = () => {
-        try { srcVideo.pause(); } catch {}
-        try { bgmNode && bgmNode.stop(); } catch {}
-        try { recorder.state !== "inactive" && recorder.stop(); } catch {}
-      };
-
-      const playClip = () => {
-        const c = clips[i];
-        if (!c) { finish(); return; }
-        srcVideo.src = c.url;
-        const onMeta = () => {
-          try { srcVideo.currentTime = c.in; } catch {}
-          srcVideo.play().catch(() => {});
-        };
-        srcVideo.addEventListener("loadedmetadata", onMeta, { once: true });
-        const onTime = () => {
-          if (srcVideo.currentTime >= c.out - 0.04) {
-            srcVideo.removeEventListener("timeupdate", onTime);
-            elapsed += (c.out - c.in);
-            onProgress(Math.min(1, elapsed / totalSec), label);
-            i++;
-            if (i >= clips.length) finish();
-            else playClip();
-          }
-        };
-        srcVideo.addEventListener("timeupdate", onTime);
-      };
-
-      try {
-        recorder.start(250);
-        if (bgmNode) bgmNode.start();
-        drawLoop();
-        playClip();
-      } catch (err) {
-        reject(err);
-      }
+      (async () => {
+        try {
+          // Initial preload: clip 0 in front, clip 1 in back
+          await loadInto(srcA, clips[0]);
+          if (clips[1]) loadInto(srcB, clips[1]); // background, don't await
+          recorder.start(250);
+          if (bgmNode) bgmNode.start();
+          frontSrc.play().catch(() => {});
+          drawLoop();
+        } catch (err) {
+          reject(err);
+        }
+      })();
     });
   }
 
