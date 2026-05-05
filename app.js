@@ -4,21 +4,39 @@
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
   // ---------- State ----------
+  const FONT_STACKS = {
+    gothic:  '"Hiragino Sans","Yu Gothic","Noto Sans JP","Hiragino Kaku Gothic ProN",system-ui,sans-serif',
+    mincho:  '"Hiragino Mincho ProN","Yu Mincho","Sawarabi Mincho","Noto Serif JP",serif',
+    maru:    '"Hiragino Maru Gothic ProN","Hiragino Maru Gothic Pro","M PLUS Rounded 1c","Yu Gothic",sans-serif',
+    impact:  '"Impact","Anton","Helvetica Inserat","Hiragino Sans","Yu Gothic",sans-serif',
+    cursive: '"Klee","Klee One","Sawarabi Mincho","Yu Mincho",cursive',
+    system:  'system-ui,-apple-system,sans-serif',
+  };
+  const FONT_LABELS = {
+    gothic:  "ゴシック",
+    mincho:  "明朝",
+    maru:    "丸ゴシック",
+    impact:  "インパクト",
+    cursive: "手書き",
+    system:  "システム",
+  };
+
   const fineDefaults = {
-    duration:    15,         // total target seconds (5..30)
-    textPos:     "center",   // "top" | "center" | "bottom"  — preset for layout
-    layout: {                // per-element position (% of frame width/height)
+    duration:    15,
+    textPos:     "center",
+    layout: {
       headline: { x: 50, y: 42 },
       subline:  { x: 50, y: 54 },
       cta:      { x: 50, y: 70 },
     },
-    textScale:   1.0,        // 0.7..1.4
-    dimAmount:   0.55,       // 0..0.85
+    textScale:   1.0,
+    dimAmount:   0.55,
     textColor:   "#ffffff",
     ctaBg:       "#ffffff",
     ctaColor:    "#0e1218",
-    shadow:      "strong",   // "none" | "soft" | "strong"
-    transition:  "dissolve", // "cut" | "dissolve" | "fade" | "slide" | "zoom"
+    shadow:      "strong",
+    transition:  "dissolve",
+    fontFamily:  "gothic",
     showHeadline:true,
     showSubline: true,
     showCta:     true,
@@ -666,30 +684,52 @@
             toast("再生終了");
             return;
           }
-          // Swap buffers: back (already preloaded with seq[i]) becomes front
-          bufIdx = 1 - bufIdx;
-          showFront();
-          front().forEach((nv) => {
+          // Capture references BEFORE flipping bufIdx
+          const oldFrontVids = front().slice();   // these will fade out
+          const newFrontVids = back().slice();    // already preloaded with seq[i]
+          const isDissolve   = (state.fine.transition === "dissolve");
+
+          // Make sure the new front begins playing
+          newFrontVids.forEach((nv) => {
             const playNow = () => nv.play().catch(() => {});
             if (nv.readyState >= 2) playNow();
             else nv.addEventListener("loadeddata", playNow, { once: true });
           });
-          // For "dissolve": keep the old buffer playing during the 0.22s opacity
-          // crossfade so frames from both clips overlap smoothly.
-          // Otherwise (cut / fade / slide / zoom): pause and preload immediately.
-          const oldBackVids = back().slice();
-          const isDissolve  = (state.fine.transition === "dissolve");
+
           if (isDissolve) {
-            const t = setTimeout(() => {
-              oldBackVids.forEach((ov) => { try { ov.pause(); } catch {} });
-              if (seq[i + 1]) loadInto(back(), seq[i + 1], false);
-            }, TRANSITION_DUR * 1000);
-            transTimers.push(t);
+            // === Cross-dissolve (rAF-driven, no black) ===
+            // Swap .active class so subsequent state is consistent, but
+            // override opacity inline during the blend.
+            bufIdx = 1 - bufIdx;
+            showFront();
+            // Force initial opacities right at the boundary
+            oldFrontVids.forEach((v) => { v.style.transition = "none"; v.style.opacity = "1"; });
+            newFrontVids.forEach((v) => { v.style.transition = "none"; v.style.opacity = "0"; });
+
+            const startMs = performance.now();
+            const DUR_MS  = TRANSITION_DUR * 1000;
+            const tick = () => {
+              if (!playState) return;
+              const t = Math.min(1, (performance.now() - startMs) / DUR_MS);
+              oldFrontVids.forEach((v) => { v.style.opacity = String(1 - t); });
+              newFrontVids.forEach((v) => { v.style.opacity = String(t); });
+              if (t < 1) requestAnimationFrame(tick);
+              else {
+                // Done — clear inline overrides and pause/preload behind the scenes
+                oldFrontVids.forEach((v) => { v.style.opacity = ""; v.style.transition = ""; try { v.pause(); } catch {} });
+                newFrontVids.forEach((v) => { v.style.opacity = ""; v.style.transition = ""; });
+                if (seq[i + 1]) loadInto(back(), seq[i + 1], false);
+              }
+            };
+            requestAnimationFrame(tick);
           } else {
-            oldBackVids.forEach((ov) => { try { ov.pause(); } catch {} });
+            // === Other transitions: instant swap, optional keyframe animation ===
+            bufIdx = 1 - bufIdx;
+            showFront();
+            oldFrontVids.forEach((v) => { try { v.pause(); } catch {} });
             if (seq[i + 1]) loadInto(back(), seq[i + 1], false);
+            scheduleTransitionForClip(i);
           }
-          scheduleTransitionForClip(i);
         }
       }
       playState.raf = requestAnimationFrame(tick);
@@ -1013,6 +1053,7 @@
       f.style.setProperty("--text-color", String(F.textColor));
       f.style.setProperty("--cta-bg",     String(F.ctaBg));
       f.style.setProperty("--cta-color",  String(F.ctaColor));
+      f.style.setProperty("--font-stack", FONT_STACKS[F.fontFamily] || FONT_STACKS.gothic);
       f.dataset.shadow = F.shadow;
       f.dataset.trans  = F.transition;
     });
@@ -1061,6 +1102,7 @@
     $$("#tunePosPills [data-tpos]").forEach((b) => b.classList.toggle("active", b.dataset.tpos === f.textPos));
     $$("#tuneShadowPills [data-shadow]").forEach((b) => b.classList.toggle("active", b.dataset.shadow === f.shadow));
     $$("#tuneTransPills [data-trans]").forEach((b) => b.classList.toggle("active", b.dataset.trans === f.transition));
+    $$("#tuneFontPills [data-font]").forEach((b) => b.classList.toggle("active", b.dataset.font === f.fontFamily));
   }
 
   function bindTuneControls() {
@@ -1101,6 +1143,14 @@
         setActive("#tuneTransPills [data-trans]", b);
         applyFine();
         if (clips.length > 1) toast(`クリップ間エフェクトを「${b.textContent.trim()}」に変更しました`);
+      });
+    });
+    $$("#tuneFontPills [data-font]").forEach((b) => {
+      b.addEventListener("click", () => {
+        state.fine.fontFamily = b.dataset.font;
+        setActive("#tuneFontPills [data-font]", b);
+        applyFine();
+        toast(`フォントを「${FONT_LABELS[state.fine.fontFamily] || state.fine.fontFamily}」に変更しました`);
       });
     });
     const onScale = () => {
@@ -1331,15 +1381,16 @@
 
     const sc    = F.textScale;
     const hSize = Math.round(base * 0.105 * sc);
+    const exportFontStack = FONT_STACKS[F.fontFamily] || FONT_STACKS.gothic;
     const sSize = Math.round(base * 0.045 * sc);
     const cSize = Math.round(base * 0.038 * sc);
 
     if (F.showHeadline) {
-      ctx.font = `900 ${hSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
+      ctx.font = `900 ${hSize}px ${exportFontStack}`;
       ctx.fillText(state.headline || "", px(layout.headline.x), py(layout.headline.y));
     }
     if (F.showSubline) {
-      ctx.font = `600 ${sSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
+      ctx.font = `600 ${sSize}px ${exportFontStack}`;
       ctx.fillText(state.subline || "", px(layout.subline.x), py(layout.subline.y));
     }
 
@@ -1347,7 +1398,7 @@
     ctx.shadowOffsetY = 0;
 
     if (F.showCta) {
-      ctx.font = `800 ${cSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
+      ctx.font = `800 ${cSize}px ${exportFontStack}`;
       const cText  = state.cta || "";
       const tw     = ctx.measureText(cText).width;
       const padX   = cSize * 1.4;
