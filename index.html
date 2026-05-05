@@ -147,6 +147,8 @@
             <button class="mic-mini" data-target="cta" title="この欄に音声入力">🎤</button>
           </label>
           <input id="ctaInput" type="text" value="今すぐチェック" />
+
+          <button class="btn btn-ghost btn-sm" id="tplTextReset" hidden type="button">↺ このテンプレの文言を初期値に戻す</button>
         </div>
 
         <div class="field-card">
@@ -254,6 +256,11 @@
                   <button type="button" class="tune-pill active" data-tpos="center">中央</button>
                   <button type="button" class="tune-pill" data-tpos="bottom">下</button>
                 </div>
+              </div>
+              <div class="tune-row tune-row-hint">
+                <label class="tune-label">個別配置</label>
+                <div class="tune-hint">プレビュー上の <strong>見出し / 期限 / CTA</strong> を直接ドラッグして自由に動かせます。</div>
+                <button type="button" class="btn btn-ghost btn-sm" id="layoutReset">↺ レイアウト初期化</button>
               </div>
               <div class="tune-row">
                 <label class="tune-label">テキストサイズ</label>

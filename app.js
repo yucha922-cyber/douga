@@ -6,7 +6,12 @@
   // ---------- State ----------
   const fineDefaults = {
     duration:    15,         // total target seconds (5..30)
-    textPos:     "center",   // "top" | "center" | "bottom"
+    textPos:     "center",   // "top" | "center" | "bottom"  — preset for layout
+    layout: {                // per-element position (% of frame width/height)
+      headline: { x: 50, y: 42 },
+      subline:  { x: 50, y: 54 },
+      cta:      { x: 50, y: 70 },
+    },
     textScale:   1.0,        // 0.7..1.4
     dimAmount:   0.55,       // 0..0.85
     textColor:   "#ffffff",
@@ -19,6 +24,13 @@
     showCta:     true,
   };
   const TRANSITION_DUR = 0.22; // seconds per outgoing/incoming half
+
+  function presetLayout(pos) {
+    if (pos === "top")    return { headline: { x: 50, y: 18 }, subline: { x: 50, y: 30 }, cta: { x: 50, y: 44 } };
+    if (pos === "bottom") return { headline: { x: 50, y: 56 }, subline: { x: 50, y: 68 }, cta: { x: 50, y: 82 } };
+    return                       { headline: { x: 50, y: 42 }, subline: { x: 50, y: 54 }, cta: { x: 50, y: 70 } };
+  }
+  const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const defaults = {
     headline: "30% OFF",
     subline:  "5/31 (土) まで",
@@ -55,11 +67,46 @@
   };
 
   // ---------- User-uploaded template images ----------
-  /** @type {{id:string,label:string,url:string}[]} */
+  /** @type {{id:string,label:string,url:string,headline:string,subline:string,cta:string}[]} */
   const userTemplates = [];
   let tplIdSeq = 0;
   /** @type {HTMLImageElement|null} preloaded for canvas export */
   let bgImageEl = null;
+
+  // Per-template overrides for offer/deadline/CTA. Keys: built-in like "ec",
+  // user templates like "user-usr-1". Only changed fields are stored.
+  /** @type {Record<string, {headline?:string, subline?:string, cta?:string}>} */
+  const templateOverrides = {};
+
+  function templateBaseFor(key) {
+    if (templates[key]) return templates[key];
+    if (typeof key === "string" && key.startsWith("user-")) {
+      const uid = key.slice(5);
+      return userTemplates.find((x) => x.id === uid) || null;
+    }
+    return null;
+  }
+  function effectiveTemplate(key) {
+    const base = templateBaseFor(key);
+    if (!base) return null;
+    const ov = templateOverrides[key] || {};
+    return {
+      label:    base.label || key,
+      headline: ov.headline ?? base.headline ?? "",
+      subline:  ov.subline  ?? base.subline  ?? "",
+      cta:      ov.cta      ?? base.cta      ?? "",
+      palette:  base.palette,
+    };
+  }
+  function hasOverride(key) {
+    const o = templateOverrides[key];
+    return !!(o && (o.headline != null || o.subline != null || o.cta != null));
+  }
+  function updateTplResetVisibility() {
+    const btn = $("#tplTextReset");
+    if (!btn) return;
+    btn.hidden = !hasOverride(state.template);
+  }
 
   // ---------- Render ----------
   function render() {
@@ -99,6 +146,16 @@
   Object.entries(fieldMap).forEach(([key, el]) => {
     el.addEventListener("input", () => {
       state[key] = el.value;
+      // Save edit into the active template's override map so each template
+      // remembers its own offer / deadline / CTA across switching.
+      const tk = state.template;
+      if (tk && templateBaseFor(tk)) {
+        if (!templateOverrides[tk]) templateOverrides[tk] = {};
+        templateOverrides[tk][key] = el.value;
+        // Re-render gallery so tile previews show the updated text.
+        if (typeof renderTemplateGallery === "function") renderTemplateGallery();
+        if (typeof updateTplResetVisibility === "function") updateTplResetVisibility();
+      }
       render();
     });
   });
@@ -680,19 +737,20 @@
     grid.innerHTML = "";
 
     // 1) Built-in templates (palette-based)
-    Object.entries(templates).forEach(([key, t]) => {
+    Object.keys(templates).forEach((key) => {
+      const eff = effectiveTemplate(key);
+      const isActive = state.template === key && !state.bgImage;
       const tile = document.createElement("button");
       tile.type = "button";
-      const isActive = state.template === key && !state.bgImage;
       tile.className = "lib-tile lib-tile-tpl" + (isActive ? " selected" : "");
       tile.dataset.tpl = key;
       tile.innerHTML = `
-        <div class="tpl-prev" style="background:${templatePreviewCSS(t.palette)}">
-          <div class="tpl-prev-h">${t.headline}</div>
-          <div class="tpl-prev-s">${t.subline}</div>
-          <div class="tpl-prev-c">${t.cta}</div>
+        <div class="tpl-prev" style="background:${templatePreviewCSS(eff.palette)}">
+          <div class="tpl-prev-h">${eff.headline}</div>
+          <div class="tpl-prev-s">${eff.subline}</div>
+          <div class="tpl-prev-c">${eff.cta}</div>
         </div>
-        <div class="tpl-tile-name">${t.label || key}</div>
+        <div class="tpl-tile-name">${eff.label}${hasOverride(key) ? ' <span class="tpl-edited">·編集済</span>' : ""}</div>
       `;
       tile.addEventListener("click", () => applyTemplate(key));
       grid.appendChild(tile);
@@ -700,19 +758,21 @@
 
     // 2) User-uploaded templates
     userTemplates.forEach((u) => {
+      const key = `user-${u.id}`;
+      const eff = effectiveTemplate(key);
+      const isActive = state.bgImage && state.bgImage.id === u.id;
       const tile = document.createElement("button");
       tile.type = "button";
-      const isActive = state.bgImage && state.bgImage.id === u.id;
       tile.className = "lib-tile lib-tile-tpl lib-tile-tpl-user" + (isActive ? " selected" : "");
       tile.dataset.userTpl = u.id;
       tile.innerHTML = `
         <div class="tpl-prev" style="background-image:url('${u.url}')">
           <div class="tpl-prev-dim"></div>
-          <div class="tpl-prev-h">${state.headline || ""}</div>
-          <div class="tpl-prev-s">${state.subline || ""}</div>
-          <div class="tpl-prev-c">${state.cta || ""}</div>
+          <div class="tpl-prev-h">${eff.headline}</div>
+          <div class="tpl-prev-s">${eff.subline}</div>
+          <div class="tpl-prev-c">${eff.cta}</div>
         </div>
-        <div class="tpl-tile-name" title="${u.label}">${u.label}</div>
+        <div class="tpl-tile-name" title="${u.label}">${u.label}${hasOverride(key) ? ' <span class="tpl-edited">·編集済</span>' : ""}</div>
         <button class="tpl-del" data-tpl-del="${u.id}" type="button" title="削除">×</button>
       `;
       tile.addEventListener("click", (e) => {
@@ -741,7 +801,7 @@
   }
 
   function applyTemplate(key) {
-    const t = templates[key];
+    const t = effectiveTemplate(key);
     if (!t) return;
     state.template = key;
     state.bgImage  = null;
@@ -749,7 +809,7 @@
     state.headline = t.headline;
     state.subline  = t.subline;
     state.cta      = t.cta;
-    state.palette  = t.palette;
+    if (t.palette) state.palette = t.palette;
     fieldMap.headline.value = state.headline;
     fieldMap.subline.value  = state.subline;
     fieldMap.cta.value      = state.cta;
@@ -757,14 +817,25 @@
     $$(".tpl-chip[data-tpl]").forEach((x) => x.classList.toggle("active", x.dataset.tpl === key));
     renderTemplateGallery();
     render();
+    updateTplResetVisibility();
     toast(`テンプレ「${t.label || key}」を適用しました`);
   }
 
   function applyUserTemplate(id) {
     const u = userTemplates.find((x) => x.id === id);
     if (!u) return;
+    const key = `user-${id}`;
+    const eff = effectiveTemplate(key);
     state.bgImage = { id: u.id, url: u.url, name: u.label };
-    state.template = `user-${id}`;
+    state.template = key;
+    if (eff) {
+      state.headline = eff.headline;
+      state.subline  = eff.subline;
+      state.cta      = eff.cta;
+      fieldMap.headline.value = state.headline;
+      fieldMap.subline.value  = state.subline;
+      fieldMap.cta.value      = state.cta;
+    }
     // Preload for canvas export
     bgImageEl = new Image();
     bgImageEl.crossOrigin = "anonymous";
@@ -773,6 +844,7 @@
     $$(".tpl-chip[data-tpl]").forEach((x) => x.classList.remove("active"));
     renderTemplateGallery();
     render();
+    updateTplResetVisibility();
     toast(`画像テンプレ「${u.label}」を適用しました`);
   }
 
@@ -791,7 +863,13 @@
       const id    = `usr-${++tplIdSeq}`;
       const url   = URL.createObjectURL(f);
       const label = f.name.replace(/\.[^.]+$/, "");
-      userTemplates.push({ id, label, url });
+      // Capture current text as the user-template's defaults
+      userTemplates.push({
+        id, label, url,
+        headline: state.headline,
+        subline:  state.subline,
+        cta:      state.cta,
+      });
       lastId = id;
     });
     renderTemplateGallery();
@@ -820,26 +898,82 @@
     toast("テンプレ画像を削除しました");
   });
 
+  // ---------- Drag-to-position for offer / deadline / CTA ----------
+  function bindElementDrag() {
+    const pairs = [
+      { sel: ".ad-headline", key: "headline" },
+      { sel: ".ad-subline",  key: "subline"  },
+      { sel: ".ad-cta",      key: "cta"      },
+    ];
+    $$(".size-card").forEach((card) => {
+      pairs.forEach(({ sel, key }) => {
+        const elem = card.querySelector(sel);
+        if (!elem) return;
+        elem.addEventListener("pointerdown", (e) => {
+          if (e.button !== 0) return;
+          // Don't fight text-selection inputs — but ad-stack has no inputs.
+          e.preventDefault();
+          const frame = elem.closest(".ad-frame");
+          if (!frame) return;
+          try { elem.setPointerCapture(e.pointerId); } catch {}
+          elem.classList.add("dragging");
+          const rect    = frame.getBoundingClientRect();
+          const startX  = e.clientX, startY = e.clientY;
+          const startPx = state.fine.layout[key].x;
+          const startPy = state.fine.layout[key].y;
+
+          const onMove = (ev) => {
+            const dx = ((ev.clientX - startX) / rect.width)  * 100;
+            const dy = ((ev.clientY - startY) / rect.height) * 100;
+            state.fine.layout[key].x = clampN(startPx + dx, 2, 98);
+            state.fine.layout[key].y = clampN(startPy + dy, 2, 98);
+            applyFine();
+          };
+          const onUp = () => {
+            elem.classList.remove("dragging");
+            try { elem.releasePointerCapture(e.pointerId); } catch {}
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup",   onUp);
+            window.removeEventListener("pointercancel", onUp);
+          };
+          window.addEventListener("pointermove", onMove);
+          window.addEventListener("pointerup",   onUp);
+          window.addEventListener("pointercancel", onUp);
+        });
+      });
+    });
+  }
+
   // ---------- Library: Fine-tune controls ----------
   function applyFine() {
+    const F = state.fine;
     // CSS vars on each .ad-frame so live preview updates immediately
     $$(".ad-frame").forEach((f) => {
-      f.style.setProperty("--text-scale", state.fine.textScale);
-      f.style.setProperty("--dim-amount", state.fine.dimAmount);
-      f.style.setProperty("--text-color", state.fine.textColor);
-      f.style.setProperty("--cta-bg",     state.fine.ctaBg);
-      f.style.setProperty("--cta-color",  state.fine.ctaColor);
-      f.dataset.shadow = state.fine.shadow;
+      f.style.setProperty("--text-scale", String(F.textScale));
+      f.style.setProperty("--dim-amount", String(F.dimAmount));
+      f.style.setProperty("--text-color", String(F.textColor));
+      f.style.setProperty("--cta-bg",     String(F.ctaBg));
+      f.style.setProperty("--cta-color",  String(F.ctaColor));
+      f.dataset.shadow = F.shadow;
     });
     $$(".size-card").forEach((card) => {
       const stack = card.querySelector(".ad-stack");
-      if (stack) stack.dataset.pos = state.fine.textPos;
+      if (stack) {
+        stack.dataset.pos = F.textPos;
+        const L = F.layout || presetLayout(F.textPos);
+        stack.style.setProperty("--h-x", L.headline.x + "%");
+        stack.style.setProperty("--h-y", L.headline.y + "%");
+        stack.style.setProperty("--s-x", L.subline.x + "%");
+        stack.style.setProperty("--s-y", L.subline.y + "%");
+        stack.style.setProperty("--c-x", L.cta.x + "%");
+        stack.style.setProperty("--c-y", L.cta.y + "%");
+      }
       const h = card.querySelector(".ad-headline");
       const s = card.querySelector(".ad-subline");
       const c = card.querySelector(".ad-cta");
-      if (h) h.style.display = state.fine.showHeadline ? "" : "none";
-      if (s) s.style.display = state.fine.showSubline  ? "" : "none";
-      if (c) c.style.display = state.fine.showCta      ? "" : "none";
+      if (h) h.style.display = F.showHeadline ? "" : "none";
+      if (s) s.style.display = F.showSubline  ? "" : "none";
+      if (c) c.style.display = F.showCta      ? "" : "none";
     });
     // Auto-arrange button text reflects current target duration
     const arr = $("#autoArrangeBtn");
@@ -883,9 +1017,16 @@
     $$("#tunePosPills [data-tpos]").forEach((b) => {
       b.addEventListener("click", () => {
         state.fine.textPos = b.dataset.tpos;
+        // Also snap individual element positions to the new preset
+        state.fine.layout = presetLayout(state.fine.textPos);
         setActive("#tunePosPills [data-tpos]", b);
         applyFine();
       });
+    });
+    $("#layoutReset") && $("#layoutReset").addEventListener("click", () => {
+      state.fine.layout = presetLayout(state.fine.textPos);
+      applyFine();
+      toast("レイアウトを初期に戻しました");
     });
     $$("#tuneShadowPills [data-shadow]").forEach((b) => {
       b.addEventListener("click", () => {
@@ -1101,14 +1242,11 @@
     ctx.fillStyle = og;
     ctx.fillRect(0, 0, W, H);
 
-    // 4) Text stack (offer / deadline / CTA pill) — honors fine controls
-    const cx   = W / 2;
-    const base = Math.min(W, H);
-    // Vertical anchor based on text position
-    const cy =
-      F.textPos === "top"    ? H * 0.22 :
-      F.textPos === "bottom" ? H * 0.78 :
-                               H * 0.50;
+    // 4) Text elements — each at its own (% of W, % of H) position
+    const base   = Math.min(W, H);
+    const layout = F.layout || presetLayout(F.textPos);
+    const px = (p) => W * (p / 100);
+    const py = (p) => H * (p / 100);
 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -1129,11 +1267,11 @@
 
     if (F.showHeadline) {
       ctx.font = `900 ${hSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
-      ctx.fillText(state.headline || "", cx, cy - hSize * 0.45);
+      ctx.fillText(state.headline || "", px(layout.headline.x), py(layout.headline.y));
     }
     if (F.showSubline) {
       ctx.font = `600 ${sSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
-      ctx.fillText(state.subline || "", cx, cy + hSize * 0.35);
+      ctx.fillText(state.subline || "", px(layout.subline.x), py(layout.subline.y));
     }
 
     ctx.shadowBlur = 0;
@@ -1147,8 +1285,10 @@
       const padY   = cSize * 0.7;
       const pillW  = tw + padX * 2;
       const pillH  = cSize + padY * 2;
-      const pillX  = cx - pillW / 2;
-      const pillY  = cy + hSize * 0.95;
+      const cxc    = px(layout.cta.x);
+      const cyc    = py(layout.cta.y);
+      const pillX  = cxc - pillW / 2;
+      const pillY  = cyc - pillH / 2;
       const r      = pillH / 2;
       ctx.fillStyle = F.ctaBg;
       ctx.beginPath();
@@ -1160,7 +1300,7 @@
       ctx.closePath();
       ctx.fill();
       ctx.fillStyle = F.ctaColor;
-      ctx.fillText(cText, cx, pillY + pillH / 2 + cSize * 0.05);
+      ctx.fillText(cText, cxc, cyc + cSize * 0.05);
     }
 
     // 5) Progress bar at bottom
@@ -1375,9 +1515,25 @@
   }
 
   // ---------- Reset to defaults ----------
+  // Reset just the active template's text overrides
+  const tplTextResetBtn = $("#tplTextReset");
+  if (tplTextResetBtn) {
+    tplTextResetBtn.addEventListener("click", () => {
+      const tk = state.template;
+      if (!tk || !templateOverrides[tk]) return;
+      delete templateOverrides[tk];
+      // Re-apply the template (built-in or user) to refresh fields
+      if (templates[tk]) applyTemplate(tk);
+      else if (typeof tk === "string" && tk.startsWith("user-")) applyUserTemplate(tk.slice(5));
+      toast("このテンプレの文言を初期値に戻しました");
+    });
+  }
+
   $("#resetBtn").addEventListener("click", () => {
     Object.assign(state, JSON.parse(JSON.stringify(defaults)));
     bgImageEl = null;
+    // Clear all per-template text overrides
+    Object.keys(templateOverrides).forEach((k) => delete templateOverrides[k]);
     fieldMap.headline.value = state.headline;
     fieldMap.subline.value  = state.subline;
     fieldMap.cta.value      = state.cta;
@@ -1391,6 +1547,7 @@
     renderTemplateGallery();
     syncTuneInputs();
     applyFine();
+    updateTplResetVisibility();
     render();
     toast("初期状態にリセットしました");
   });
@@ -1435,8 +1592,10 @@
   renderTemplateGallery();
   renderBgmList();
   bindTuneControls();
+  bindElementDrag();
   syncTuneInputs();
   applyFine();
+  updateTplResetVisibility();
   updateTotalMeta();
   render();
 })();
