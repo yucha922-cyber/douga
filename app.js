@@ -6,7 +6,12 @@
   // ---------- State ----------
   const fineDefaults = {
     duration:    15,         // total target seconds (5..30)
-    textPos:     "center",   // "top" | "center" | "bottom"
+    textPos:     "center",   // "top" | "center" | "bottom"  — preset for layout
+    layout: {                // per-element position (% of frame width/height)
+      headline: { x: 50, y: 42 },
+      subline:  { x: 50, y: 54 },
+      cta:      { x: 50, y: 70 },
+    },
     textScale:   1.0,        // 0.7..1.4
     dimAmount:   0.55,       // 0..0.85
     textColor:   "#ffffff",
@@ -19,6 +24,13 @@
     showCta:     true,
   };
   const TRANSITION_DUR = 0.22; // seconds per outgoing/incoming half
+
+  function presetLayout(pos) {
+    if (pos === "top")    return { headline: { x: 50, y: 18 }, subline: { x: 50, y: 30 }, cta: { x: 50, y: 44 } };
+    if (pos === "bottom") return { headline: { x: 50, y: 56 }, subline: { x: 50, y: 68 }, cta: { x: 50, y: 82 } };
+    return                       { headline: { x: 50, y: 42 }, subline: { x: 50, y: 54 }, cta: { x: 50, y: 70 } };
+  }
+  const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const defaults = {
     headline: "30% OFF",
     subline:  "5/31 (土) まで",
@@ -886,6 +898,52 @@
     toast("テンプレ画像を削除しました");
   });
 
+  // ---------- Drag-to-position for offer / deadline / CTA ----------
+  function bindElementDrag() {
+    const pairs = [
+      { sel: ".ad-headline", key: "headline" },
+      { sel: ".ad-subline",  key: "subline"  },
+      { sel: ".ad-cta",      key: "cta"      },
+    ];
+    $$(".size-card").forEach((card) => {
+      pairs.forEach(({ sel, key }) => {
+        const elem = card.querySelector(sel);
+        if (!elem) return;
+        elem.addEventListener("pointerdown", (e) => {
+          if (e.button !== 0) return;
+          // Don't fight text-selection inputs — but ad-stack has no inputs.
+          e.preventDefault();
+          const frame = elem.closest(".ad-frame");
+          if (!frame) return;
+          try { elem.setPointerCapture(e.pointerId); } catch {}
+          elem.classList.add("dragging");
+          const rect    = frame.getBoundingClientRect();
+          const startX  = e.clientX, startY = e.clientY;
+          const startPx = state.fine.layout[key].x;
+          const startPy = state.fine.layout[key].y;
+
+          const onMove = (ev) => {
+            const dx = ((ev.clientX - startX) / rect.width)  * 100;
+            const dy = ((ev.clientY - startY) / rect.height) * 100;
+            state.fine.layout[key].x = clampN(startPx + dx, 2, 98);
+            state.fine.layout[key].y = clampN(startPy + dy, 2, 98);
+            applyFine();
+          };
+          const onUp = () => {
+            elem.classList.remove("dragging");
+            try { elem.releasePointerCapture(e.pointerId); } catch {}
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup",   onUp);
+            window.removeEventListener("pointercancel", onUp);
+          };
+          window.addEventListener("pointermove", onMove);
+          window.addEventListener("pointerup",   onUp);
+          window.addEventListener("pointercancel", onUp);
+        });
+      });
+    });
+  }
+
   // ---------- Library: Fine-tune controls ----------
   function applyFine() {
     const F = state.fine;
@@ -900,13 +958,22 @@
     });
     $$(".size-card").forEach((card) => {
       const stack = card.querySelector(".ad-stack");
-      if (stack) stack.dataset.pos = state.fine.textPos;
+      if (stack) {
+        stack.dataset.pos = F.textPos;
+        const L = F.layout || presetLayout(F.textPos);
+        stack.style.setProperty("--h-x", L.headline.x + "%");
+        stack.style.setProperty("--h-y", L.headline.y + "%");
+        stack.style.setProperty("--s-x", L.subline.x + "%");
+        stack.style.setProperty("--s-y", L.subline.y + "%");
+        stack.style.setProperty("--c-x", L.cta.x + "%");
+        stack.style.setProperty("--c-y", L.cta.y + "%");
+      }
       const h = card.querySelector(".ad-headline");
       const s = card.querySelector(".ad-subline");
       const c = card.querySelector(".ad-cta");
-      if (h) h.style.display = state.fine.showHeadline ? "" : "none";
-      if (s) s.style.display = state.fine.showSubline  ? "" : "none";
-      if (c) c.style.display = state.fine.showCta      ? "" : "none";
+      if (h) h.style.display = F.showHeadline ? "" : "none";
+      if (s) s.style.display = F.showSubline  ? "" : "none";
+      if (c) c.style.display = F.showCta      ? "" : "none";
     });
     // Auto-arrange button text reflects current target duration
     const arr = $("#autoArrangeBtn");
@@ -950,9 +1017,16 @@
     $$("#tunePosPills [data-tpos]").forEach((b) => {
       b.addEventListener("click", () => {
         state.fine.textPos = b.dataset.tpos;
+        // Also snap individual element positions to the new preset
+        state.fine.layout = presetLayout(state.fine.textPos);
         setActive("#tunePosPills [data-tpos]", b);
         applyFine();
       });
+    });
+    $("#layoutReset") && $("#layoutReset").addEventListener("click", () => {
+      state.fine.layout = presetLayout(state.fine.textPos);
+      applyFine();
+      toast("レイアウトを初期に戻しました");
     });
     $$("#tuneShadowPills [data-shadow]").forEach((b) => {
       b.addEventListener("click", () => {
@@ -1168,14 +1242,11 @@
     ctx.fillStyle = og;
     ctx.fillRect(0, 0, W, H);
 
-    // 4) Text stack (offer / deadline / CTA pill) — honors fine controls
-    const cx   = W / 2;
-    const base = Math.min(W, H);
-    // Vertical anchor based on text position
-    const cy =
-      F.textPos === "top"    ? H * 0.22 :
-      F.textPos === "bottom" ? H * 0.78 :
-                               H * 0.50;
+    // 4) Text elements — each at its own (% of W, % of H) position
+    const base   = Math.min(W, H);
+    const layout = F.layout || presetLayout(F.textPos);
+    const px = (p) => W * (p / 100);
+    const py = (p) => H * (p / 100);
 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -1196,11 +1267,11 @@
 
     if (F.showHeadline) {
       ctx.font = `900 ${hSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
-      ctx.fillText(state.headline || "", cx, cy - hSize * 0.45);
+      ctx.fillText(state.headline || "", px(layout.headline.x), py(layout.headline.y));
     }
     if (F.showSubline) {
       ctx.font = `600 ${sSize}px "Hiragino Sans","Yu Gothic","Noto Sans JP",system-ui,sans-serif`;
-      ctx.fillText(state.subline || "", cx, cy + hSize * 0.35);
+      ctx.fillText(state.subline || "", px(layout.subline.x), py(layout.subline.y));
     }
 
     ctx.shadowBlur = 0;
@@ -1214,8 +1285,10 @@
       const padY   = cSize * 0.7;
       const pillW  = tw + padX * 2;
       const pillH  = cSize + padY * 2;
-      const pillX  = cx - pillW / 2;
-      const pillY  = cy + hSize * 0.95;
+      const cxc    = px(layout.cta.x);
+      const cyc    = py(layout.cta.y);
+      const pillX  = cxc - pillW / 2;
+      const pillY  = cyc - pillH / 2;
       const r      = pillH / 2;
       ctx.fillStyle = F.ctaBg;
       ctx.beginPath();
@@ -1227,7 +1300,7 @@
       ctx.closePath();
       ctx.fill();
       ctx.fillStyle = F.ctaColor;
-      ctx.fillText(cText, cx, pillY + pillH / 2 + cSize * 0.05);
+      ctx.fillText(cText, cxc, cyc + cSize * 0.05);
     }
 
     // 5) Progress bar at bottom
@@ -1519,6 +1592,7 @@
   renderTemplateGallery();
   renderBgmList();
   bindTuneControls();
+  bindElementDrag();
   syncTuneInputs();
   applyFine();
   updateTplResetVisibility();
