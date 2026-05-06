@@ -32,6 +32,8 @@
     textScale:   1.0,
     dimAmount:   0.55,
     textColor:   "#ffffff",
+    strokeColor: "#000000",
+    strokeWidth: 0,           // 0..8 (px in preview, scaled for export)
     ctaBg:       "#ffffff",
     ctaColor:    "#0e1218",
     shadow:      "strong",
@@ -41,6 +43,40 @@
     showSubline: true,
     showCta:     true,
   };
+
+  // ---------- Captions (time-bound text overlays) ----------
+  /** @type {{id:string,text:string,startSec:number,endSec:number,x:number,y:number,fontSize:number,color:string,strokeColor:string,strokeWidth:number,fontFamily:string,enterAnim:string}[]} */
+  const captions = [];
+  let capIdSeq = 0;
+  const CAPTION_ANIMS = {
+    "none":       "なし",
+    "fade":       "フェード",
+    "slide-up":   "下からスライド",
+    "slide-down": "上からスライド",
+    "slide-left": "右からスライド",
+    "slide-right":"左からスライド",
+    "scale":      "拡大",
+    "pop":        "ポップ",
+  };
+  const CAPTION_ENTER_DUR = 0.35; // seconds
+
+  function captionFactory(overrides) {
+    const def = {
+      id:          `cap-${++capIdSeq}`,
+      text:        "テキスト",
+      startSec:    0,
+      endSec:      Math.min(3, state.fine ? state.fine.duration : 15),
+      x:           50,
+      y:           80,
+      fontSize:    1.0,
+      color:       "#ffffff",
+      strokeColor: "#0e1218",
+      strokeWidth: 2,
+      fontFamily:  "gothic",
+      enterAnim:   "fade",
+    };
+    return Object.assign(def, overrides || {});
+  }
   const TRANSITION_DUR = 0.22; // seconds per outgoing/incoming half
 
   function presetLayout(pos) {
@@ -588,6 +624,8 @@
     playState = null;
     setProgress(0);
     stopBgm && stopBgm();
+    // Restore caption visibility for editing
+    updateCaptionsForTime(0, false);
   }
 
   function setProgress(ratio) {
@@ -669,8 +707,10 @@
       const c = seq[i];
       if (v && c && v.readyState >= 1) {
         const local = Math.max(0, v.currentTime - c.in);
-        const ratio = grandTotal ? (cumPrev + Math.min(local, totals[i])) / grandTotal : 0;
+        const usedSoFar = cumPrev + Math.min(local, totals[i]);
+        const ratio = grandTotal ? usedSoFar / grandTotal : 0;
         setProgress(ratio);
+        updateCaptionsForTime(usedSoFar, true);
         // Keep the second card's front video in sync time-wise
         if (front()[1]) {
           const drift = Math.abs(front()[1].currentTime - v.currentTime);
@@ -1043,17 +1083,282 @@
     });
   }
 
+  // ---------- Library: Captions (timed text overlays) ----------
+  const capListEl = $("#captionList");
+
+  function escAttr(s) { return String(s).replace(/"/g, "&quot;"); }
+  function escHtml(s) { return String(s).replace(/[&<>]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c])); }
+
+  function renderCaptionList() {
+    if (!capListEl) return;
+    capListEl.innerHTML = "";
+    captions.forEach((c) => {
+      const animOpts = Object.entries(CAPTION_ANIMS)
+        .map(([k, label]) => `<option value="${k}" ${c.enterAnim === k ? "selected" : ""}>${label}</option>`).join("");
+      const fontOpts = Object.entries(FONT_LABELS)
+        .map(([k, label]) => `<option value="${k}" ${c.fontFamily === k ? "selected" : ""}>${label}</option>`).join("");
+      const row = document.createElement("div");
+      row.className = "caption-row";
+      row.dataset.capId = c.id;
+      row.innerHTML = `
+        <div class="cap-line cap-line-1">
+          <input class="cap-text" type="text" value="${escAttr(c.text)}" placeholder="テキスト" />
+          <button class="cap-del" data-cap-del="${c.id}" type="button" title="削除">×</button>
+        </div>
+        <div class="cap-line cap-line-2">
+          <label>開始 <input class="cap-start" type="number" min="0" step="0.5" value="${c.startSec}" /> s</label>
+          <label>終了 <input class="cap-end"   type="number" min="0" step="0.5" value="${c.endSec}" /> s</label>
+          <label>登場 <select class="cap-anim">${animOpts}</select></label>
+        </div>
+        <div class="cap-line cap-line-3">
+          <label class="cap-color-wrap">色 <input class="cap-color" type="color" value="${c.color}" /></label>
+          <label class="cap-color-wrap">縁 <input class="cap-stroke-color" type="color" value="${c.strokeColor}" /></label>
+          <label>枠 <input class="cap-stroke-w" type="range" min="0" max="8" step="0.5" value="${c.strokeWidth}" /></label>
+          <label>大 <input class="cap-size" type="range" min="0.5" max="2.2" step="0.05" value="${c.fontSize}" /></label>
+          <select class="cap-font">${fontOpts}</select>
+        </div>
+      `;
+      capListEl.appendChild(row);
+    });
+    const cnt = $("#libCntCap");
+    if (cnt) cnt.textContent = `${captions.length} 件`;
+  }
+
+  function captionElById(id) { return captions.find((c) => c.id === id); }
+
+  function applyCaptionStyle(el, c) {
+    el.style.left   = c.x + "%";
+    el.style.top    = c.y + "%";
+    el.style.color  = c.color;
+    el.style.fontFamily = FONT_STACKS[c.fontFamily] || FONT_STACKS.gothic;
+    el.style.fontSize   = `calc(clamp(11px, 4cqw, 28px) * ${c.fontSize})`;
+    if (c.strokeWidth > 0) {
+      el.style.webkitTextStroke = `${c.strokeWidth}px ${c.strokeColor}`;
+      el.style.textStroke       = `${c.strokeWidth}px ${c.strokeColor}`;
+    } else {
+      el.style.webkitTextStroke = "";
+      el.style.textStroke       = "";
+    }
+    el.textContent = c.text;
+  }
+
+  function renderCaptionsDOM() {
+    $$(".size-card").forEach((card) => {
+      const stack = card.querySelector(".ad-stack");
+      if (!stack) return;
+      // Remove existing caption nodes in this stack
+      stack.querySelectorAll(".ad-caption").forEach((n) => n.remove());
+      // Add fresh nodes (one per caption)
+      captions.forEach((c) => {
+        const el = document.createElement("div");
+        el.className = "ad-caption";
+        el.dataset.capId = c.id;
+        applyCaptionStyle(el, c);
+        stack.appendChild(el);
+        bindCaptionDrag(el, c.id);
+      });
+    });
+  }
+
+  function bindCaptionDrag(elem, id) {
+    elem.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const c = captionElById(id);
+      if (!c) return;
+      const frame = elem.closest(".ad-frame");
+      if (!frame) return;
+      try { elem.setPointerCapture(e.pointerId); } catch {}
+      elem.classList.add("dragging");
+      const rect    = frame.getBoundingClientRect();
+      const startX  = e.clientX, startY = e.clientY;
+      const startPx = c.x, startPy = c.y;
+      const onMove = (ev) => {
+        const dx = ((ev.clientX - startX) / rect.width)  * 100;
+        const dy = ((ev.clientY - startY) / rect.height) * 100;
+        c.x = clampN(startPx + dx, 2, 98);
+        c.y = clampN(startPy + dy, 2, 98);
+        $$(".ad-stack .ad-caption[data-cap-id='" + id + "']").forEach((el) => {
+          el.style.left = c.x + "%"; el.style.top = c.y + "%";
+        });
+      };
+      const onUp = () => {
+        elem.classList.remove("dragging");
+        try { elem.releasePointerCapture(e.pointerId); } catch {}
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup",   onUp);
+        window.removeEventListener("pointercancel", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup",   onUp);
+      window.addEventListener("pointercancel", onUp);
+    });
+  }
+
+  // Drive caption visibility + entrance animations from the playback timeline
+  function updateCaptionsForTime(globalT, isPlaying) {
+    $$(".size-card").forEach((card) => {
+      card.querySelectorAll(".ad-caption").forEach((el) => {
+        const c = captionElById(el.dataset.capId);
+        if (!c) return;
+        if (!isPlaying) {
+          // Idle: keep all visible (semi) so user can edit / drag
+          el.style.display = "";
+          el.style.opacity = "0.85";
+          el.style.transform = "translate(-50%, -50%)";
+          return;
+        }
+        const inRange = globalT >= c.startSec && globalT <= c.endSec;
+        if (!inRange) { el.style.display = "none"; return; }
+        el.style.display = "";
+        const tIn = Math.max(0, globalT - c.startSec);
+        if (tIn < CAPTION_ENTER_DUR && c.enterAnim !== "none") {
+          const p = tIn / CAPTION_ENTER_DUR;
+          const eased = 1 - Math.pow(1 - p, 3);
+          let tx = "-50%", ty = "-50%", scale = 1, alpha = 1;
+          switch (c.enterAnim) {
+            case "fade":        alpha = eased; break;
+            case "slide-up":    alpha = eased; ty = `calc(-50% + ${(1 - eased) * 24}%)`; break;
+            case "slide-down":  alpha = eased; ty = `calc(-50% - ${(1 - eased) * 24}%)`; break;
+            case "slide-left":  alpha = eased; tx = `calc(-50% + ${(1 - eased) * 24}%)`; break;
+            case "slide-right": alpha = eased; tx = `calc(-50% - ${(1 - eased) * 24}%)`; break;
+            case "scale":       alpha = eased; scale = 0.7 + 0.3 * eased; break;
+            case "pop":         alpha = eased; scale = 0.4 + 0.6 * (1 - Math.pow(1 - p, 4)) + 0.05 * Math.sin(p * Math.PI * 2); break;
+          }
+          el.style.opacity   = String(alpha);
+          el.style.transform = `translate(${tx}, ${ty}) scale(${scale})`;
+        } else {
+          el.style.opacity   = "1";
+          el.style.transform = "translate(-50%, -50%)";
+        }
+      });
+    });
+  }
+
+  function addCaption(over) {
+    captions.push(captionFactory(over));
+    renderCaptionList();
+    renderCaptionsDOM();
+    updateCaptionsForTime(0, false);
+    return captions[captions.length - 1];
+  }
+  function deleteCaption(id) {
+    const i = captions.findIndex((c) => c.id === id);
+    if (i < 0) return;
+    captions.splice(i, 1);
+    renderCaptionList();
+    renderCaptionsDOM();
+  }
+
+  function autoGenerateCaptions() {
+    const dur = state.fine.duration || 15;
+    const pool = [];
+    const promptText = ($("#aiPrompt") && $("#aiPrompt").value || "").trim();
+    if (promptText) {
+      const parts = promptText.split(/[、,。.\n]+/).map((s) => s.trim()).filter(Boolean);
+      pool.push(...parts);
+    }
+    [state.headline, state.subline, state.cta].forEach((t) => {
+      if (t && !pool.includes(t)) pool.push(t);
+    });
+    if (!pool.length) {
+      toast("プロンプトかオファー/期限/CTA を入力してから自動配置してください");
+      return;
+    }
+    // Clear existing
+    captions.length = 0;
+    const each = dur / pool.length;
+    const animVariants = ["fade", "slide-up", "scale", "slide-left", "pop"];
+    const yPositions   = [28, 72, 50, 38, 62, 22, 78];
+    pool.forEach((text, i) => {
+      captions.push(captionFactory({
+        text,
+        startSec: +(i * each).toFixed(2),
+        endSec:   +Math.min(dur, (i + 1) * each + 0.5).toFixed(2),
+        x: 50,
+        y: yPositions[i % yPositions.length],
+        fontSize: i === 0 ? 1.3 : 1.0,
+        color: "#ffffff",
+        strokeColor: "#0e1218",
+        strokeWidth: 2,
+        fontFamily: state.fine.fontFamily,
+        enterAnim: animVariants[i % animVariants.length],
+      }));
+    });
+    renderCaptionList();
+    renderCaptionsDOM();
+    updateCaptionsForTime(0, false);
+    toast(`${captions.length} 件のテキストを自動配置しました`);
+  }
+
+  // Wire caption list edits + folder buttons
+  function bindCaptionControls() {
+    if (capListEl) {
+      capListEl.addEventListener("input", (e) => {
+        const row = e.target.closest(".caption-row");
+        if (!row) return;
+        const id = row.dataset.capId;
+        const c = captionElById(id);
+        if (!c) return;
+        const t = e.target;
+        if (t.classList.contains("cap-text"))         c.text = t.value;
+        else if (t.classList.contains("cap-start"))   c.startSec = Math.max(0, Number(t.value) || 0);
+        else if (t.classList.contains("cap-end"))     c.endSec   = Math.max(0, Number(t.value) || 0);
+        else if (t.classList.contains("cap-color"))   c.color = t.value;
+        else if (t.classList.contains("cap-stroke-color")) c.strokeColor = t.value;
+        else if (t.classList.contains("cap-stroke-w"))     c.strokeWidth = Number(t.value);
+        else if (t.classList.contains("cap-size"))         c.fontSize    = Number(t.value);
+        // Apply visual update to all stacks
+        $$(".ad-stack .ad-caption[data-cap-id='" + id + "']").forEach((el) => applyCaptionStyle(el, c));
+      });
+      capListEl.addEventListener("change", (e) => {
+        const row = e.target.closest(".caption-row");
+        if (!row) return;
+        const id = row.dataset.capId;
+        const c = captionElById(id);
+        if (!c) return;
+        const t = e.target;
+        if (t.classList.contains("cap-anim")) c.enterAnim = t.value;
+        else if (t.classList.contains("cap-font")) {
+          c.fontFamily = t.value;
+          $$(".ad-stack .ad-caption[data-cap-id='" + id + "']").forEach((el) => applyCaptionStyle(el, c));
+        }
+      });
+      capListEl.addEventListener("click", (e) => {
+        const del = e.target.closest("[data-cap-del]");
+        if (del) { deleteCaption(del.dataset.capDel); }
+      });
+    }
+    $("#captionAdd")     && $("#captionAdd").addEventListener("click", () => {
+      const c = addCaption();
+      toast("テキストを追加しました");
+      // Focus the text input of the just-added row
+      const row = capListEl && capListEl.querySelector(`.caption-row[data-cap-id='${c.id}'] .cap-text`);
+      row && row.focus();
+    });
+    $("#captionAutoGen") && $("#captionAutoGen").addEventListener("click", autoGenerateCaptions);
+    $("#captionClear")   && $("#captionClear").addEventListener("click", () => {
+      if (!captions.length) return;
+      captions.length = 0;
+      renderCaptionList();
+      renderCaptionsDOM();
+      toast("テキストを全消去しました");
+    });
+  }
+
   // ---------- Library: Fine-tune controls ----------
   function applyFine() {
     const F = state.fine;
     // CSS vars on each .ad-frame so live preview updates immediately
     $$(".ad-frame").forEach((f) => {
-      f.style.setProperty("--text-scale", String(F.textScale));
-      f.style.setProperty("--dim-amount", String(F.dimAmount));
-      f.style.setProperty("--text-color", String(F.textColor));
-      f.style.setProperty("--cta-bg",     String(F.ctaBg));
-      f.style.setProperty("--cta-color",  String(F.ctaColor));
-      f.style.setProperty("--font-stack", FONT_STACKS[F.fontFamily] || FONT_STACKS.gothic);
+      f.style.setProperty("--text-scale",   String(F.textScale));
+      f.style.setProperty("--dim-amount",   String(F.dimAmount));
+      f.style.setProperty("--text-color",   String(F.textColor));
+      f.style.setProperty("--stroke-color", String(F.strokeColor));
+      f.style.setProperty("--stroke-w",     String(F.strokeWidth));
+      f.style.setProperty("--cta-bg",       String(F.ctaBg));
+      f.style.setProperty("--cta-color",    String(F.ctaColor));
+      f.style.setProperty("--font-stack",   FONT_STACKS[F.fontFamily] || FONT_STACKS.gothic);
       f.dataset.shadow = F.shadow;
       f.dataset.trans  = F.transition;
     });
@@ -1091,6 +1396,10 @@
     if (el("tuneDimVal"))    el("tuneDimVal").textContent    = `${Math.round(f.dimAmount * 100)}%`;
     if (el("tuneTextColor")) el("tuneTextColor").value = f.textColor;
     if (el("tuneTextColorVal")) el("tuneTextColorVal").textContent = f.textColor.toUpperCase();
+    if (el("tuneStrokeColor")) el("tuneStrokeColor").value = f.strokeColor;
+    if (el("tuneStrokeColorVal")) el("tuneStrokeColorVal").textContent = f.strokeColor.toUpperCase();
+    if (el("tuneStrokeW"))   el("tuneStrokeW").value   = f.strokeWidth;
+    if (el("tuneStrokeWVal"))el("tuneStrokeWVal").textContent = String(f.strokeWidth);
     if (el("tuneCtaBg"))     el("tuneCtaBg").value     = f.ctaBg;
     if (el("tuneCtaBgVal"))  el("tuneCtaBgVal").textContent  = f.ctaBg.toUpperCase();
     if (el("tuneCtaColor"))  el("tuneCtaColor").value  = f.ctaColor;
@@ -1175,9 +1484,16 @@
         applyFine();
       });
     };
-    colorBind("tuneTextColor", "tuneTextColorVal", "textColor");
-    colorBind("tuneCtaBg",     "tuneCtaBgVal",     "ctaBg");
-    colorBind("tuneCtaColor",  "tuneCtaColorVal",  "ctaColor");
+    colorBind("tuneTextColor",   "tuneTextColorVal",   "textColor");
+    colorBind("tuneStrokeColor", "tuneStrokeColorVal", "strokeColor");
+    colorBind("tuneCtaBg",       "tuneCtaBgVal",       "ctaBg");
+    colorBind("tuneCtaColor",    "tuneCtaColorVal",    "ctaColor");
+
+    $("#tuneStrokeW") && $("#tuneStrokeW").addEventListener("input", (e) => {
+      state.fine.strokeWidth = Number(e.target.value);
+      $("#tuneStrokeWVal").textContent = String(state.fine.strokeWidth);
+      applyFine();
+    });
 
     $("#tuneShowH") && $("#tuneShowH").addEventListener("change", (e) => { state.fine.showHeadline = e.target.checked; applyFine(); });
     $("#tuneShowS") && $("#tuneShowS").addEventListener("change", (e) => { state.fine.showSubline  = e.target.checked; applyFine(); });
@@ -1297,7 +1613,55 @@
     return map[name] || map.sunset;
   }
 
-  function drawExportFrame(ctx, video, W, H, progress, trans, backVideo) {
+  function drawCaptionsOnCanvas(ctx, W, H, globalT) {
+    const base = Math.min(W, H);
+    captions.forEach((c) => {
+      if (globalT < c.startSec || globalT > c.endSec) return;
+      const tIn = Math.max(0, globalT - c.startSec);
+      const inDur = CAPTION_ENTER_DUR;
+      let alpha = 1, dx = 0, dy = 0, scale = 1;
+      if (tIn < inDur && c.enterAnim !== "none") {
+        const p = tIn / inDur;
+        const eased = 1 - Math.pow(1 - p, 3);
+        switch (c.enterAnim) {
+          case "fade":        alpha = eased; break;
+          case "slide-up":    alpha = eased; dy =  (1 - eased) * H * 0.05; break;
+          case "slide-down":  alpha = eased; dy = -(1 - eased) * H * 0.05; break;
+          case "slide-left":  alpha = eased; dx =  (1 - eased) * W * 0.05; break;
+          case "slide-right": alpha = eased; dx = -(1 - eased) * W * 0.05; break;
+          case "scale":       alpha = eased; scale = 0.7 + 0.3 * eased; break;
+          case "pop":         alpha = eased; scale = 0.4 + 0.6 * (1 - Math.pow(1 - p, 4)); break;
+        }
+      }
+      const cx = (c.x / 100) * W + dx;
+      const cy = (c.y / 100) * H + dy;
+      const fontStack = FONT_STACKS[c.fontFamily] || FONT_STACKS.gothic;
+      const size = Math.round(base * 0.06 * (c.fontSize || 1));
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(cx, cy);
+      if (scale !== 1) ctx.scale(scale, scale);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `700 ${size}px ${fontStack}`;
+      // Outline
+      const strokeScale = base / 540;
+      const sw = (c.strokeWidth || 0) * strokeScale;
+      if (sw > 0) {
+        ctx.lineWidth   = sw * 1.6;
+        ctx.strokeStyle = c.strokeColor;
+        ctx.lineJoin    = "round";
+        ctx.miterLimit  = 2;
+        ctx.strokeText(c.text || "", 0, 0);
+      }
+      ctx.fillStyle = c.color;
+      ctx.fillText(c.text || "", 0, 0);
+      ctx.restore();
+    });
+  }
+
+  function drawExportFrame(ctx, video, W, H, progress, trans, backVideo, globalT) {
     trans = trans || { type: "cut", phase: "none", p: 0 };
     // 1) Background gradient — always rendered so transparent / partial templates
     //    don't reveal raw black canvas. Template image is drawn LAST (frontmost).
@@ -1385,13 +1749,32 @@
     const sSize = Math.round(base * 0.045 * sc);
     const cSize = Math.round(base * 0.038 * sc);
 
+    // Stroke / outline scale relative to canvas size so it matches the live preview
+    const strokeScale = base / 540;
+    const exportStrokeW = (F.strokeWidth || 0) * strokeScale;
+
     if (F.showHeadline) {
       ctx.font = `900 ${hSize}px ${exportFontStack}`;
-      ctx.fillText(state.headline || "", px(layout.headline.x), py(layout.headline.y));
+      const hx = px(layout.headline.x), hy = py(layout.headline.y);
+      if (exportStrokeW > 0) {
+        ctx.lineWidth   = exportStrokeW * 1.6;
+        ctx.strokeStyle = F.strokeColor;
+        ctx.lineJoin    = "round";
+        ctx.miterLimit  = 2;
+        ctx.strokeText(state.headline || "", hx, hy);
+      }
+      ctx.fillText(state.headline || "", hx, hy);
     }
     if (F.showSubline) {
       ctx.font = `600 ${sSize}px ${exportFontStack}`;
-      ctx.fillText(state.subline || "", px(layout.subline.x), py(layout.subline.y));
+      const sx = px(layout.subline.x), sy = py(layout.subline.y);
+      if (exportStrokeW > 0) {
+        ctx.lineWidth   = exportStrokeW * 1.2;
+        ctx.strokeStyle = F.strokeColor;
+        ctx.lineJoin    = "round";
+        ctx.strokeText(state.subline || "", sx, sy);
+      }
+      ctx.fillText(state.subline || "", sx, sy);
     }
 
     ctx.shadowBlur = 0;
@@ -1432,6 +1815,11 @@
     pg.addColorStop(1, "#6f5cff");
     ctx.fillStyle = pg;
     ctx.fillRect(0, H - barH, W * Math.max(0, Math.min(1, progress)), barH);
+
+    // 5b) Captions — drawn after primary text/progress, before template overlay
+    if (typeof globalT === "number" && captions.length) {
+      drawCaptionsOnCanvas(ctx, W, H, globalT);
+    }
 
     // 6) Template image overlay — drawn LAST so it sits on top of everything
     //    (banner / frame designs use transparent areas to reveal video / text).
@@ -1550,7 +1938,8 @@
           }
         }
 
-        drawExportFrame(ctx, frontSrc, W, H, ratio, trans, backSrc);
+        const globalT = elapsed + (c ? Math.min(local, c.out - c.in) : 0);
+        drawExportFrame(ctx, frontSrc, W, H, ratio, trans, backSrc, globalT);
 
         // Boundary check + dual-buffer swap
         if (c && frontSrc.currentTime >= c.out - 0.04) {
@@ -1747,10 +2136,14 @@
   if (!SR) showHintNoSupport();
   renderTemplateGallery();
   renderBgmList();
+  renderCaptionList();
+  renderCaptionsDOM();
   bindTuneControls();
+  bindCaptionControls();
   bindElementDrag();
   syncTuneInputs();
   applyFine();
+  updateCaptionsForTime(0, false);
   updateTplResetVisibility();
   updateTotalMeta();
   render();
