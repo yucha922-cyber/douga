@@ -232,6 +232,23 @@
               </p>
             </div>
           </details>
+          <details class="lib-folder" id="folderCaptions" open>
+            <summary>
+              <span class="folder-icon">📝</span>
+              <span class="folder-name">テキスト (タイムライン)</span>
+              <span class="folder-count" id="libCntCap">0 件</span>
+            </summary>
+            <div class="lib-folder-body">
+              <div class="caption-list" id="captionList"></div>
+              <div class="clip-actions">
+                <button class="btn btn-ghost btn-sm" id="captionAdd" type="button">＋ テキストを追加</button>
+                <button class="btn btn-ghost btn-sm" id="captionAutoGen" type="button">✨ 自動配置</button>
+                <button class="btn btn-ghost btn-sm" id="captionClear" type="button">全消去</button>
+              </div>
+              <p class="hint">プレビュー上で各テキストを直接ドラッグして配置できます。再生中は <strong>開始〜終了秒</strong> の範囲だけ表示され、登場時にエフェクトがかかります。</p>
+            </div>
+          </details>
+
           <details class="lib-folder" id="folderTune" open>
             <summary>
               <span class="folder-icon">✏️</span>
@@ -276,6 +293,16 @@
                 <label class="tune-label">テキスト色</label>
                 <input type="color" id="tuneTextColor" value="#ffffff" />
                 <span class="tune-val" id="tuneTextColorVal">#FFFFFF</span>
+              </div>
+              <div class="tune-row">
+                <label class="tune-label">縁取り色</label>
+                <input type="color" id="tuneStrokeColor" value="#000000" />
+                <span class="tune-val" id="tuneStrokeColorVal">#000000</span>
+              </div>
+              <div class="tune-row">
+                <label class="tune-label">縁取り太さ</label>
+                <input type="range" id="tuneStrokeW" min="0" max="8" step="0.5" value="0" />
+                <span class="tune-val" id="tuneStrokeWVal">0</span>
               </div>
               <div class="tune-row">
                 <label class="tune-label">CTA 背景</label>
