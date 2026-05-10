@@ -1803,18 +1803,32 @@
 
     // 6) Template image overlay — drawn LAST so it sits on top of everything
     //    (banner / frame designs use transparent areas to reveal video / text).
-    //    Mirrors the live preview's `object-fit: contain` + bottom-center
-    //    `object-position`: scale the full banner to fit inside the frame
-    //    without cropping or stretching, then anchor it to the bottom safe
-    //    area so it stays consistent across 1:1 and 9:16 ratios.
+    //    Square (1:1) frames: cover-fit so the banner fills the full width
+    //    with the excess height cropped (no side gutters, no stretching).
+    //    Tall (9:16) frames: contain-fit anchored to the bottom safe area
+    //    so the whole banner stays visible above the progress bar.
     if (bgImageEl && bgImageEl.complete && bgImageEl.naturalWidth) {
       const iw = bgImageEl.naturalWidth, ih = bgImageEl.naturalHeight;
-      const scale = Math.min(W / iw, H / ih);
-      const dw = iw * scale;
-      const dh = ih * scale;
-      const dx = (W - dw) / 2;       // horizontal center
-      const dy = H - dh;             // bottom-anchored (object-position: 50% 100%)
-      try { ctx.drawImage(bgImageEl, 0, 0, iw, ih, dx, dy, dw, dh); } catch {}
+      const isSquare = W === H;
+      let sx, sy, sw, sh, dx, dy, dw, dh;
+      if (isSquare) {
+        // cover: scale by max(W/iw, H/ih), then crop the source to W:H
+        const scale = Math.max(W / iw, H / ih);
+        sw = W / scale;
+        sh = H / scale;
+        sx = (iw - sw) / 2;            // horizontally centered crop
+        sy = (ih - sh) / 2;            // vertically centered crop (object-position: 50% 50%)
+        dx = 0; dy = 0; dw = W; dh = H;
+      } else {
+        // contain: scale by min, anchor bottom-center
+        const scale = Math.min(W / iw, H / ih);
+        sx = 0; sy = 0; sw = iw; sh = ih;
+        dw = iw * scale;
+        dh = ih * scale;
+        dx = (W - dw) / 2;             // horizontal center
+        dy = H - dh;                   // bottom-anchored (object-position: 50% 100%)
+      }
+      try { ctx.drawImage(bgImageEl, sx, sy, sw, sh, dx, dy, dw, dh); } catch {}
     }
 
     // 7) Final fade-through-black overlay (only for "fade" transition)
