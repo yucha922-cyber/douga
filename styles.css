@@ -634,12 +634,17 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
   z-index: 10; display: none;   /* always frontmost */
   pointer-events: none;
 }
-/* 1:1 frames: stretch the banner to fill the full width and crop the
-   excess height instead of leaving side gutters. Aspect ratio is still
-   preserved (no horizontal stretching). 9:16 keeps the contain layout. */
+/* 1:1 frames: pin the banner to the top edge at full canvas width with
+   `height: auto` so the intrinsic aspect ratio is preserved exactly
+   (no vertical stretching). Any height that exceeds the square frame
+   is clipped by `.ad-frame`'s `overflow: hidden`, effectively cropping
+   the banner's bottom only. */
 .ad-frame.ratio-1-1 .ad-bg-image {
-  object-fit: cover;
-  object-position: 50% 50%;
+  inset: 0 0 auto 0;          /* top, right, left pinned; bottom: auto */
+  width: 100%;
+  height: auto;               /* aspect-preserving; height grows naturally */
+  object-fit: fill;           /* irrelevant once box matches image ratio */
+  object-position: 50% 0;
 }
 .ad-video {
   position: absolute; inset: 0; width: 100%; height: 100%;

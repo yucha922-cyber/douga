@@ -1812,13 +1812,23 @@
       const isSquare = W === H;
       let sx, sy, sw, sh, dx, dy, dw, dh;
       if (isSquare) {
-        // cover: scale by max(W/iw, H/ih), then crop the source to W:H
-        const scale = Math.max(W / iw, H / ih);
-        sw = W / scale;
-        sh = H / scale;
-        sx = (iw - sw) / 2;            // horizontally centered crop
-        sy = (ih - sh) / 2;            // vertically centered crop (object-position: 50% 50%)
-        dx = 0; dy = 0; dw = W; dh = H;
+        // Fit-width, top-anchored: scale uniformly so the banner's width
+        // matches the canvas width, then crop only the bottom if the
+        // scaled height exceeds the frame. Aspect ratio is preserved
+        // exactly — no vertical stretching.
+        const scale  = W / iw;
+        const fullDh = ih * scale;
+        dx = 0; dy = 0; dw = W;
+        if (fullDh > H) {
+          // Banner is taller than the square — keep top, drop bottom.
+          sx = 0; sy = 0; sw = iw;
+          sh = H / scale;              // source rows that map to exactly H
+          dh = H;
+        } else {
+          // Banner fits within the square — draw it whole at the top.
+          sx = 0; sy = 0; sw = iw; sh = ih;
+          dh = fullDh;
+        }
       } else {
         // contain: scale by min, anchor bottom-center
         const scale = Math.min(W / iw, H / ih);
