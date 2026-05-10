@@ -1803,13 +1803,18 @@
 
     // 6) Template image overlay — drawn LAST so it sits on top of everything
     //    (banner / frame designs use transparent areas to reveal video / text).
+    //    Mirrors the live preview's `object-fit: contain` + bottom-center
+    //    `object-position`: scale the full banner to fit inside the frame
+    //    without cropping or stretching, then anchor it to the bottom safe
+    //    area so it stays consistent across 1:1 and 9:16 ratios.
     if (bgImageEl && bgImageEl.complete && bgImageEl.naturalWidth) {
       const iw = bgImageEl.naturalWidth, ih = bgImageEl.naturalHeight;
-      const sr = iw / ih, dr = W / H;
-      let sx, sy, sw, sh;
-      if (sr > dr) { sh = ih; sw = ih * dr; sx = (iw - sw) / 2; sy = 0; }
-      else         { sw = iw; sh = iw / dr; sx = 0; sy = (ih - sh) / 2; }
-      try { ctx.drawImage(bgImageEl, sx, sy, sw, sh, 0, 0, W, H); } catch {}
+      const scale = Math.min(W / iw, H / ih);
+      const dw = iw * scale;
+      const dh = ih * scale;
+      const dx = (W - dw) / 2;       // horizontal center
+      const dy = H - dh;             // bottom-anchored (object-position: 50% 100%)
+      try { ctx.drawImage(bgImageEl, 0, 0, iw, ih, dx, dy, dw, dh); } catch {}
     }
 
     // 7) Final fade-through-black overlay (only for "fade" transition)

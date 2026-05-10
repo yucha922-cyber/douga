@@ -624,7 +624,14 @@ code { font-family: var(--mono); background: #eef0f7; padding: 1px 6px; border-r
 }
 .ad-bg-image {
   position: absolute; inset: 0; width: 100%; height: 100%;
-  object-fit: cover; z-index: 10; display: none;   /* always frontmost */
+  /* `contain` keeps the banner's native aspect ratio so it never stretches
+     or overflows when the frame switches between 1:1 and 9:16. */
+  object-fit: contain;
+  /* Bottom-center safe area: the banner sits anchored above the progress
+     bar regardless of frame ratio. Override via inline style for custom
+     placement (`object-position: 50% 50%`, etc.). */
+  object-position: 50% 100%;
+  z-index: 10; display: none;   /* always frontmost */
   pointer-events: none;
 }
 .ad-video {
