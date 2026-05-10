@@ -1252,43 +1252,19 @@
 
   function autoGenerateCaptions() {
     const dur = state.fine.duration || 15;
-    const pool = [];
-    const promptText = ($("#aiPrompt") && $("#aiPrompt").value || "").trim();
-    if (promptText) {
-      const parts = promptText.split(/[、,。.\n]+/).map((s) => s.trim()).filter(Boolean);
-      pool.push(...parts);
-    }
-    [state.headline, state.subline, state.cta].forEach((t) => {
-      if (t && !pool.includes(t)) pool.push(t);
-    });
-    if (!pool.length) {
-      toast("プロンプトかオファー/期限/CTA を入力してから自動配置してください");
+    if (!captions.length) {
+      toast("タイムラインにテキストを追加してから自動配置してください");
       return;
     }
-    // Clear existing
-    captions.length = 0;
-    const each = dur / pool.length;
-    const animVariants = ["fade", "slide-up", "scale", "slide-left", "pop"];
-    const yPositions   = [28, 72, 50, 38, 62, 22, 78];
-    pool.forEach((text, i) => {
-      captions.push(captionFactory({
-        text,
-        startSec: +(i * each).toFixed(2),
-        endSec:   +Math.min(dur, (i + 1) * each + 0.5).toFixed(2),
-        x: 50,
-        y: yPositions[i % yPositions.length],
-        fontSize: i === 0 ? 1.3 : 1.0,
-        color: "#ffffff",
-        strokeColor: "#0e1218",
-        strokeWidth: 2,
-        fontFamily: state.fine.fontFamily,
-        enterAnim: animVariants[i % animVariants.length],
-      }));
+    const each = dur / captions.length;
+    captions.forEach((c, i) => {
+      c.startSec = +(i * each).toFixed(2);
+      c.endSec   = +Math.min(dur, (i + 1) * each).toFixed(2);
     });
     renderCaptionList();
     renderCaptionsDOM();
     updateCaptionsForTime(0, false);
-    toast(`${captions.length} 件のテキストを自動配置しました`);
+    toast(`${captions.length} 件のテキストの表示タイミングを均等に割り振りました`);
   }
 
   // Wire caption list edits + folder buttons
