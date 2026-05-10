@@ -182,7 +182,11 @@
       if (img) {
         if (state.bgImage) {
           if (img.getAttribute("src") !== state.bgImage.url) img.src = state.bgImage.url;
-          img.style.display = "";
+          // Override the CSS default (`display: none`) with an explicit
+          // inline value so the template image actually appears on top of
+          // the video. Setting `""` here would fall back to the stylesheet
+          // rule and keep the image hidden.
+          img.style.display = "block";
         } else {
           img.removeAttribute("src");
           img.style.display = "none";
