@@ -12,8 +12,10 @@
   // ---------- State ----------
   /** @type {{file:File, url:string, video:HTMLVideoElement, duration:number, start:number}[]} */
   const media = [];
-  /** @type {{text:string, start:number, end:number}[]} */
+  /** @type {{text:string, start:number, end:number, animationType:string}[]} */
   let textCues = [];
+
+  const ANIM_DURATION = 0.3; // seconds for enter/exit animation
 
   const style = {
     fontSize: 96,
@@ -140,38 +142,41 @@
 
   // ---------- Text distribution ----------
   $("#applyText").addEventListener("click", () => {
-    const lines = $("#textInput").value
-      .split("\n").map((s) => s.trim()).filter(Boolean);
+    const defaultAnim = $("#animationType").value;
+    const parsed = $("#textInput").value
+      .split("\n").map((s) => s.trim()).filter(Boolean)
+      .map((line) => parseLine(line, defaultAnim));
     const mode = $("#distributeMode").value;
     const total = totalDuration();
-    if (!lines.length) {
+    if (!parsed.length) {
       textCues = [];
       renderSchedule();
       return;
     }
-    if (mode === "even" && total > 0) {
-      const each = total / lines.length;
-      textCues = lines.map((text, i) => ({
-        text,
-        start: i * each,
-        end: (i + 1) * each,
-      }));
-    } else {
-      const each = Math.max(0.1, parseFloat($("#perDuration").value) || 3);
-      textCues = lines.map((text, i) => ({
-        text,
-        start: i * each,
-        end: (i + 1) * each,
-      }));
-    }
+    const each =
+      mode === "even" && total > 0
+        ? total / parsed.length
+        : Math.max(0.1, parseFloat($("#perDuration").value) || 3);
+    textCues = parsed.map(({ text, animationType }, i) => ({
+      text,
+      animationType,
+      start: i * each,
+      end: (i + 1) * each,
+    }));
     renderSchedule();
   });
+
+  function parseLine(line, fallback) {
+    const m = /^(pop|slide|fade|none):\s*(.+)$/i.exec(line);
+    if (m) return { animationType: m[1].toLowerCase(), text: m[2] };
+    return { animationType: fallback, text: line };
+  }
 
   function renderSchedule() {
     $("#schedule").innerHTML = textCues
       .map(
         (c, i) =>
-          `<div>#${i + 1} [${c.start.toFixed(1)}–${c.end.toFixed(1)}s] ${escapeHTML(c.text)}</div>`
+          `<div>#${i + 1} [${c.start.toFixed(1)}–${c.end.toFixed(1)}s] (${c.animationType}) ${escapeHTML(c.text)}</div>`
       )
       .join("");
   }
@@ -182,11 +187,60 @@
     );
   }
 
-  function currentText(t) {
+  function currentCue(t) {
     for (const c of textCues) {
-      if (t >= c.start && t < c.end) return c.text;
+      if (t >= c.start && t < c.end) return c;
     }
-    return "";
+    return null;
+  }
+
+  // ---------- Animation engine (driven by currentTime) ----------
+  const easeOutQuad   = (t) => 1 - (1 - t) * (1 - t);
+  const easeInOutQuad = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  const easeOutCubic  = (t) => 1 - Math.pow(1 - t, 3);
+  const easeInCubic   = (t) => t * t * t;
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  function getAnimState(cue, t) {
+    const localT = t - cue.start;
+    const dur = cue.end - cue.start;
+    let scale = 1, opacity = 1, dx = 0, dy = 0;
+
+    // ---- Enter phase ----
+    if (localT < ANIM_DURATION) {
+      const p = Math.max(0, localT / ANIM_DURATION); // 0..1
+      if (cue.animationType === "pop") {
+        // 0..0.5 : 0   -> 1.2  (overshoot, easeOutQuad)
+        // 0.5..1 : 1.2 -> 1.0  (settle,    easeInOutQuad)
+        if (p < 0.5) {
+          scale = lerp(0, 1.2, easeOutQuad(p * 2));
+        } else {
+          scale = lerp(1.2, 1.0, easeInOutQuad((p - 0.5) * 2));
+        }
+      } else if (cue.animationType === "slide") {
+        const e = easeOutCubic(p);
+        dy = (1 - e) * canvas.height * 0.08;
+        opacity = e;
+      } else if (cue.animationType === "fade") {
+        opacity = easeOutQuad(p);
+      }
+    }
+    // ---- Exit phase ----
+    else if (localT > dur - ANIM_DURATION) {
+      const p = Math.max(0, (dur - localT) / ANIM_DURATION); // 1..0
+      if (cue.animationType === "slide") {
+        const e = easeInCubic(1 - p);
+        dy = -e * canvas.height * 0.08;
+        opacity = p;
+      } else if (cue.animationType === "fade") {
+        opacity = p;
+      } else if (cue.animationType === "pop") {
+        opacity = p;
+        scale = lerp(0.9, 1.0, p);
+      }
+    }
+
+    return { scale, opacity, dx, dy };
   }
 
   // ---------- Style bindings ----------
@@ -215,8 +269,11 @@
     ctx.drawImage(v, x, y, w, h);
   }
 
-  function drawText(text) {
-    if (!text) return;
+  function drawText(cue, t) {
+    if (!cue || !cue.text) return;
+    const { scale, opacity, dx, dy } = getAnimState(cue, t);
+    if (opacity <= 0 || scale <= 0) return;
+
     const weight = style.bold ? "900" : "500";
     ctx.font = `${weight} ${style.fontSize}px ${style.fontFamily}`;
     ctx.textAlign = "center";
@@ -224,23 +281,28 @@
     ctx.lineJoin = "round";
     ctx.miterLimit = 2;
 
-    const x = canvas.width / 2;
-    const y = (canvas.height * style.posY) / 100;
+    const cx = canvas.width / 2;
+    const cy = (canvas.height * style.posY) / 100;
 
-    // Word-wrap for long lines (simple)
-    const maxWidth = canvas.width * 0.9;
-    const lines = wrapText(ctx, text, maxWidth);
+    const maxWidth = (canvas.width * 0.9) / scale;
+    const lines = wrapText(ctx, cue.text, maxWidth);
     const lh = style.fontSize * 1.2;
     const offsetY = -(lines.length - 1) * lh / 2;
 
-    // Stroke first (thick outline), then fill
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.translate(cx + dx, cy + dy);
+    ctx.scale(scale, scale);
+
     if (style.strokeWidth > 0) {
       ctx.strokeStyle = style.strokeColor;
-      ctx.lineWidth = style.strokeWidth * 2; // doubled because half is clipped by fill
-      lines.forEach((ln, i) => ctx.strokeText(ln, x, y + offsetY + i * lh));
+      ctx.lineWidth = style.strokeWidth * 2;
+      lines.forEach((ln, i) => ctx.strokeText(ln, 0, offsetY + i * lh));
     }
     ctx.fillStyle = style.fillColor;
-    lines.forEach((ln, i) => ctx.fillText(ln, x, y + offsetY + i * lh));
+    lines.forEach((ln, i) => ctx.fillText(ln, 0, offsetY + i * lh));
+
+    ctx.restore();
   }
 
   function wrapText(ctx, text, maxWidth) {
@@ -265,7 +327,7 @@
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     if (activeVideoIdx >= 0) drawVideoFrame(media[activeVideoIdx]);
-    drawText(currentText(currentTime));
+    drawText(currentCue(currentTime), currentTime);
   }
 
   // ---------- Playback ----------
@@ -349,6 +411,101 @@
 
   $("#playBtn").addEventListener("click", () => (playing ? stop() : play()));
   $("#seek").addEventListener("input", (e) => seekTo(+e.target.value));
+
+  // ---------- Export (MediaRecorder, synced with preview) ----------
+  // Strategy: record canvas.captureStream() in realtime while the same RAF loop
+  // drives both preview and recording. Since drawing is deterministic from
+  // `currentTime`, every frame on screen is the frame that gets recorded.
+  let recorder = null;
+  let sharedAudioCtx = null;
+  const exportBtn = $("#exportBtn");
+  const exportStatus = $("#exportStatus");
+
+  exportBtn.addEventListener("click", async () => {
+    if (recorder && recorder.state === "recording") {
+      recorder.stop();
+      return;
+    }
+    if (!media.length) {
+      exportStatus.textContent = "メディアがありません";
+      return;
+    }
+
+    const fps = Math.max(10, Math.min(60, +$("#exportFps").value || 30));
+    const stream = canvas.captureStream(fps);
+
+    if ($("#exportAudio").checked) {
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        sharedAudioCtx = sharedAudioCtx || new AC();
+        const dest = sharedAudioCtx.createMediaStreamDestination();
+        for (const m of media) {
+          m.video.muted = false;
+          // createMediaElementSource can only be called once per element — cache it
+          if (!m._audioSrc) {
+            m._audioSrc = sharedAudioCtx.createMediaElementSource(m.video);
+            m._audioSrc.connect(sharedAudioCtx.destination);
+          }
+          m._audioSrc.connect(dest);
+        }
+        dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
+      } catch (e) {
+        console.warn("audio capture failed", e);
+      }
+    }
+
+    const mime = pickMimeType();
+    const chunks = [];
+    recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: chunks[0]?.type || "video/webm" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `canvas-edit-${Date.now()}.webm`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      exportBtn.textContent = "録画開始 (WebM)";
+      exportBtn.disabled = false;
+      exportStatus.textContent = "完了 ✓";
+      recorder = null;
+    };
+
+    exportBtn.textContent = "■ 停止";
+    exportStatus.textContent = "録画中…";
+
+    // Drive playback deterministically from the same RAF loop as preview.
+    seekTo(0);
+    // Wait one frame so the seeked frame is painted before the recorder starts.
+    await new Promise((r) => requestAnimationFrame(r));
+    recorder.start(100);
+    play();
+
+    // Auto-stop at end of timeline
+    const total = totalDuration();
+    const stopAtEnd = () => {
+      if (!recorder || recorder.state !== "recording") return;
+      if (currentTime >= total - 1 / fps) {
+        recorder.stop();
+      } else {
+        requestAnimationFrame(stopAtEnd);
+      }
+    };
+    requestAnimationFrame(stopAtEnd);
+  });
+
+  function pickMimeType() {
+    const candidates = [
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm;codecs=vp9",
+      "video/webm;codecs=vp8",
+      "video/webm",
+      "video/mp4",
+    ];
+    return candidates.find((m) => MediaRecorder.isTypeSupported?.(m)) || "";
+  }
 
   // Initial paint
   render();
