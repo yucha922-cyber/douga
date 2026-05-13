@@ -12,10 +12,13 @@
   // ---------- State ----------
   /** @type {{file:File, url:string, video:HTMLVideoElement, duration:number, start:number}[]} */
   const media = [];
-  /** @type {{text:string, start:number, end:number, animationType:string}[]} */
+  /** @type {{text:string, start:number, end:number, animationType:string, fillColor?:string}[]} */
   let textCues = [];
 
   const ANIM_DURATION = 0.3; // seconds for enter/exit animation
+
+  // Foreground banner layer (drawn on top of video + text)
+  const banners = { top: "", bottom: "", bg: "#fb2c36", fg: "#ffffff" };
 
   const style = {
     fontSize: 96,
@@ -172,6 +175,84 @@
     return { animationType: fallback, text: line };
   }
 
+  // ---------- Auto ad mode ----------
+  // Split long text into ~chunkLen-char chunks, preferring punctuation breaks.
+  function chunkText(input, chunkLen) {
+    const norm = input.replace(/\s+/g, " ").trim();
+    if (!norm) return [];
+    const out = [];
+    let buf = "";
+    const flush = () => { if (buf.trim()) out.push(buf.trim()); buf = ""; };
+    // Hard breaks: . , ! ? 。 、 ！ ？ newlines
+    const isHard = (c) => /[。、！？!?,.]/.test(c);
+    for (const ch of norm) {
+      buf += ch;
+      const overTarget = buf.length >= chunkLen;
+      const wayOver = buf.length >= Math.round(chunkLen * 1.4);
+      if ((overTarget && isHard(ch)) || wayOver) {
+        flush();
+        continue;
+      }
+      // Latin word break near target
+      if (overTarget && ch === " ") {
+        flush();
+      }
+    }
+    flush();
+    // Merge tiny tail into previous
+    if (out.length >= 2 && out[out.length - 1].length < Math.max(3, chunkLen / 3)) {
+      out[out.length - 2] += " " + out.pop();
+    }
+    return out;
+  }
+
+  const COLOR_PRESETS = {
+    "alt-yellow-white": ["#facc15", "#ffffff"],
+    "alt-pink-white":   ["#f472b6", "#ffffff"],
+  };
+  function pickColor(scheme, i) {
+    if (scheme === "random") {
+      const palette = ["#facc15", "#f472b6", "#22d3ee", "#a3e635", "#fb923c", "#ffffff"];
+      return palette[(Math.random() * palette.length) | 0];
+    }
+    if (scheme === "single") return null;
+    const pair = COLOR_PRESETS[scheme] || COLOR_PRESETS["alt-yellow-white"];
+    return pair[i % pair.length];
+  }
+
+  $("#autoGenBtn").addEventListener("click", () => {
+    const input = $("#adInput").value;
+    const chunkLen = Math.max(3, +$("#adChunkLen").value || 15);
+    const scheme = $("#adColorScheme").value;
+    const chunks = chunkText(input, chunkLen);
+    if (!chunks.length) { $("#schedule").innerHTML = "<div>入力がありません</div>"; return; }
+
+    const total = totalDuration();
+    const each = total > 0 ? total / chunks.length
+                            : Math.max(0.1, parseFloat($("#perDuration").value) || 3);
+    const defaultAnim = $("#animationType").value;
+
+    textCues = chunks.map((text, i) => ({
+      text,
+      animationType: defaultAnim,
+      start: i * each,
+      end: (i + 1) * each,
+      fillColor: pickColor(scheme, i),
+    }));
+
+    banners.top    = $("#bannerTop").value.trim();
+    banners.bottom = $("#bannerBottom").value.trim();
+    banners.bg     = $("#bannerBg").value;
+    banners.fg     = $("#bannerFg").value;
+
+    // Reflect generated text back into the main textarea so the user can edit
+    $("#textInput").value = chunks.join("\n");
+    renderSchedule();
+    render();
+  });
+
+  $("#autoExportBtn").addEventListener("click", () => $("#exportBtn").click());
+
   function renderSchedule() {
     $("#schedule").innerHTML = textCues
       .map(
@@ -299,9 +380,35 @@
       ctx.lineWidth = style.strokeWidth * 2;
       lines.forEach((ln, i) => ctx.strokeText(ln, 0, offsetY + i * lh));
     }
-    ctx.fillStyle = style.fillColor;
+    ctx.fillStyle = cue.fillColor || style.fillColor;
     lines.forEach((ln, i) => ctx.fillText(ln, 0, offsetY + i * lh));
 
+    ctx.restore();
+  }
+
+  function drawBanners() {
+    if (!banners.top && !banners.bottom) return;
+    const W = canvas.width, H = canvas.height;
+    const h = Math.round(H * 0.09);
+    const fs = Math.round(h * 0.42);
+
+    ctx.save();
+    ctx.font = `900 ${fs}px ${style.fontFamily}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    if (banners.top) {
+      ctx.fillStyle = banners.bg;
+      ctx.fillRect(0, 0, W, h);
+      ctx.fillStyle = banners.fg;
+      ctx.fillText(banners.top, W / 2, h / 2);
+    }
+    if (banners.bottom) {
+      ctx.fillStyle = banners.bg;
+      ctx.fillRect(0, H - h, W, h);
+      ctx.fillStyle = banners.fg;
+      ctx.fillText(banners.bottom, W / 2, H - h / 2);
+    }
     ctx.restore();
   }
 
@@ -328,6 +435,7 @@
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     if (activeVideoIdx >= 0) drawVideoFrame(media[activeVideoIdx]);
     drawText(currentCue(currentTime), currentTime);
+    drawBanners();
   }
 
   // ---------- Playback ----------
