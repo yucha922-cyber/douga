@@ -3,18 +3,20 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Canvas Video Editor — 9:16</title>
+<title>AI Canvas Video Editor — 9:16</title>
 <link rel="stylesheet" href="styles.css" />
 <style>
   body { background: #0b0e14; color: #e6e8ee; font-family: system-ui, -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif; margin: 0; }
   .cve-wrap { max-width: 1200px; margin: 0 auto; padding: 24px; display: grid; grid-template-columns: 360px 1fr; gap: 24px; }
-  .cve-stage { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .cve-stage { display: flex; flex-direction: column; align-items: center; gap: 12px; position: sticky; top: 24px; align-self: start; }
   .cve-canvas-frame {
     width: min(100%, 360px); aspect-ratio: 9 / 16;
     background: #000; border-radius: 12px; overflow: hidden;
     box-shadow: 0 10px 40px rgba(0,0,0,.5);
+    position: relative;
   }
-  #stage { width: 100%; height: 100%; display: block; }
+  #stage { width: 100%; height: 100%; display: block; touch-action: none; cursor: default; }
+  #stage.dragging { cursor: grabbing; }
   .cve-transport { display: flex; gap: 8px; align-items: center; width: min(100%, 360px); }
   .cve-transport input[type=range] { flex: 1; }
   .cve-panel { background: #131826; border-radius: 12px; padding: 16px; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
@@ -28,13 +30,14 @@
     border-radius: 6px; padding: 8px; font-size: 13px; font-family: inherit;
   }
   .cve-row input[type=color] { width: 36px; height: 28px; border: none; background: transparent; padding: 0; }
-  .cve-row textarea { min-height: 120px; resize: vertical; }
+  .cve-row textarea { min-height: 100px; resize: vertical; }
   .cve-btn {
     background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white;
     border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px;
     cursor: pointer; font-weight: 600;
   }
   .cve-btn.secondary { background: #2a3149; }
+  .cve-btn.danger    { background: #ef4444; }
   .cve-btn:disabled { opacity: .5; cursor: not-allowed; }
   .cve-drop {
     border: 2px dashed #2a3149; border-radius: 10px; padding: 20px; text-align: center;
@@ -49,10 +52,26 @@
   .cve-media-list .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cve-media-list .dur { color: #9aa5c4; }
   .cve-media-list button { background: transparent; color: #ef4444; border: none; cursor: pointer; font-size: 16px; }
-  .cve-schedule { font-size: 11px; color: #9aa5c4; margin-top: 8px; max-height: 140px; overflow: auto; }
-  .cve-schedule div { padding: 2px 0; }
+  .cve-schedule { font-size: 11px; color: #9aa5c4; margin-top: 8px; max-height: 160px; overflow: auto; }
+  .cve-schedule div { padding: 2px 0; cursor: pointer; border-radius: 3px; padding-left: 4px; }
+  .cve-schedule div:hover { background: #1a2138; color: #e6e8ee; }
+  .cve-schedule div.active { background: #312e81; color: #e6e8ee; }
+  .cve-hint { font-size: 11px; color: #9aa5c4; margin: 6px 0; }
+  .cve-badge {
+    display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 4px;
+    background: #312e81; color: #c7d2fe; margin-left: 6px; vertical-align: middle;
+  }
+  .cve-status-line { font-size: 12px; color: #9aa5c4; margin-top: 6px; min-height: 1.2em; }
+  .cve-sel-box {
+    border: 1px solid #2a3149; border-radius: 8px; padding: 10px;
+    background: #0b0e14; margin-top: 8px; font-size: 12px;
+  }
+  .cve-sel-box.empty { color: #6b7390; font-style: italic; }
+  .cve-mini-row { display: flex; gap: 6px; align-items: center; font-size: 11px; color: #9aa5c4; }
+  .cve-mini-row input[type=number] { width: 60px; background: #0b0e14; color: #e6e8ee; border: 1px solid #2a3149; border-radius: 4px; padding: 3px 5px; font-size: 11px; }
   @media (max-width: 880px) {
     .cve-wrap { grid-template-columns: 1fr; }
+    .cve-stage { position: static; }
   }
 </style>
 </head>
@@ -70,18 +89,27 @@
       <input type="range" id="seek" min="0" max="0" step="0.01" value="0" />
       <span id="timeLabel" style="font-size:12px;color:#9aa5c4;min-width:80px;text-align:right;">0.0 / 0.0</span>
     </div>
+    <div class="cve-sel-box empty" id="selBox" style="width:min(100%,360px);">
+      テキストをクリックすると、ドラッグ・拡大・回転できます
+    </div>
   </div>
 
   <!-- Right: controls -->
   <div>
     <div class="cve-panel">
-      <h3>1. メディア (9:16)</h3>
+      <h3>1. メディア (9:16) <span class="cve-badge">AIシーン解析</span></h3>
       <div class="cve-drop" id="drop">
         ここに動画ファイルをドラッグ＆ドロップ<br />
         または <u>クリックして選択</u>（複数可・連結再生）
       </div>
       <input type="file" id="fileInput" accept="video/*" multiple hidden />
       <ul class="cve-media-list" id="mediaList"></ul>
+      <div class="cve-row">
+        <label>サンプル数</label>
+        <input type="number" id="sceneSamples" value="20" min="5" max="60" style="max-width:80px" />
+        <button class="cve-btn secondary" id="rescanSceneBtn">ベストシーン再解析</button>
+      </div>
+      <div class="cve-status-line" id="sceneStatus">動画を追加すると、ブレ・ボケの少ない区間を自動検出します</div>
     </div>
 
     <div class="cve-panel" style="border-left:3px solid #fbbf24;">
@@ -119,8 +147,37 @@
       <button class="cve-btn secondary" id="autoExportBtn">そのまま書き出し</button>
     </div>
 
+    <div class="cve-panel" style="border-left:3px solid #22d3ee;">
+      <h3 style="color:#22d3ee;">★ AI字幕（音声認識 / 自動分割）</h3>
+      <div class="cve-row">
+        <label>言語</label>
+        <select id="srLang">
+          <option value="ja-JP">日本語 (ja-JP)</option>
+          <option value="en-US">English (en-US)</option>
+          <option value="zh-CN">中文 (zh-CN)</option>
+          <option value="ko-KR">한국어 (ko-KR)</option>
+        </select>
+        <button class="cve-btn" id="srToggleBtn">● 音声認識開始</button>
+      </div>
+      <p class="cve-hint">
+        マイクから収録された音声をリアルタイムで字幕化し、自動的にタイムスタンプ付きでタイムラインへ追加します。<br>
+        動画再生中にボタンを押すと、再生時刻に同期してキューが配置されます。
+      </p>
+      <div class="cve-status-line" id="srStatus">未起動</div>
+      <hr style="border:none;border-top:1px solid #2a3149;margin:10px 0;" />
+      <div class="cve-row">
+        <label>長文ペースト</label>
+        <textarea id="captionPaste" placeholder="認識が難しい場合：ここに台本やナレーション原稿を貼り付けると、句読点・無音区間を推測して動画の尺に合わせて自動分割・配置します"></textarea>
+      </div>
+      <div class="cve-row">
+        <label>1字あたり秒</label>
+        <input type="number" id="captionCps" value="0.12" step="0.01" min="0.05" max="0.5" style="max-width:90px" />
+        <button class="cve-btn" id="captionSplitBtn">自動分割 → タイムラインへ</button>
+      </div>
+    </div>
+
     <div class="cve-panel">
-      <h3>2. テキスト（自動配置）</h3>
+      <h3>2. テキスト（自動配置 + 自由配置）</h3>
       <div class="cve-row">
         <label>テキスト一覧</label>
         <textarea id="textInput" placeholder="1行に1つのテキストを入力&#10;例:&#10;こんにちは&#10;Canvas で&#10;動画を編集"></textarea>
@@ -142,23 +199,13 @@
           <option value="none">なし</option>
         </select>
       </div>
-      <p style="font-size:11px;color:#9aa5c4;margin:6px 0;">行頭に <code>pop:</code> / <code>slide:</code> / <code>fade:</code> を書くと個別に上書きできます</p>
+      <p class="cve-hint">
+        行頭に <code>pop:</code> / <code>slide:</code> / <code>fade:</code> を書くと個別に上書きできます。<br>
+        プレビュー上のテキストはクリックでドラッグ移動、四隅で拡大縮小、上のハンドルで回転できます。
+      </p>
       <button class="cve-btn" id="applyText">タイムラインに反映</button>
+      <button class="cve-btn secondary" id="resetLayoutBtn">配置リセット</button>
       <div class="cve-schedule" id="schedule"></div>
-    </div>
-
-    <div class="cve-panel">
-      <h3>4. 書き出し（録画）</h3>
-      <div class="cve-row">
-        <label>FPS</label>
-        <input type="number" id="exportFps" value="30" min="10" max="60" style="max-width:80px" />
-        <label style="min-width:auto">
-          <input type="checkbox" id="exportAudio" />
-          音声を含める
-        </label>
-      </div>
-      <button class="cve-btn" id="exportBtn">録画開始 (WebM)</button>
-      <span id="exportStatus" style="font-size:12px;color:#9aa5c4;margin-left:8px;"></span>
     </div>
 
     <div class="cve-panel">
@@ -191,6 +238,20 @@
         </select>
         <label style="min-width:auto"><input type="checkbox" id="bold" checked /> 太字</label>
       </div>
+    </div>
+
+    <div class="cve-panel">
+      <h3>4. 書き出し（録画）</h3>
+      <div class="cve-row">
+        <label>FPS</label>
+        <input type="number" id="exportFps" value="30" min="10" max="60" style="max-width:80px" />
+        <label style="min-width:auto">
+          <input type="checkbox" id="exportAudio" />
+          音声を含める
+        </label>
+      </div>
+      <button class="cve-btn" id="exportBtn">録画開始 (WebM)</button>
+      <span id="exportStatus" style="font-size:12px;color:#9aa5c4;margin-left:8px;"></span>
     </div>
   </div>
 </div>
